@@ -3,9 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
+using PlaylistSync.Core.Download;
 using PlaylistSync.Core.Logging;
 using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Storage;
+using PlaylistSync.Core.Sync;
 using PlaylistSync.Core.Tools;
 
 namespace PlaylistSync.App;
@@ -60,6 +62,9 @@ internal static class Program
         sc.AddSingleton<ToolLocator>();
         sc.AddSingleton<ToolChecker>();
         sc.AddSingleton<IPlaylistSource, YtDlpPlaylistSource>();
+        sc.AddSingleton(TimeProvider.System);
+        sc.AddSingleton<ITrackDownloader, YtDlpTrackDownloader>();
+        sc.AddSingleton<SyncService>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }

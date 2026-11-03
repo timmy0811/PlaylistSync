@@ -57,39 +57,13 @@ public sealed class YtDlpPlaylistSource(ToolLocator locator, IProcessRunner runn
     /// <summary>Turns yt-dlp's stderr into a user-facing error, with a hint where we recognise the cause.</summary>
     internal static PlaylistFetchException DescribeError(string stderr, string? url = null)
     {
-        var lines = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var errorLine = lines.LastOrDefault(l => l.StartsWith("ERROR:", StringComparison.Ordinal))
-                        ?? lines.LastOrDefault()
-                        ?? "yt-dlp failed without an error message.";
-        var message = CleanErrorLine(errorLine);
+        var message = YtDlpErrorText.LastError(stderr);
 
         // Watch Later / Liked videos / Liked music only exist for a signed-in user; without one YouTube says "does not exist".
-        if (YouTubeUrl.PlaylistId(url) is "WL" or "LL" or "LM" || ContainsAny(message, "confirm you", "not a bot", "Sign in", "sign in", "age-restricted", "members-only",
-                "cookies"))
-        {
-            return new PlaylistFetchException(FetchErrorKind.NeedsCookies,
-                $"{message}\nYouTube requires a signed-in session for this. Set up cookies in Settings → Network.");
-        }
-        if (ContainsAny(message, "Unsupported URL"))
+        if (YouTubeUrl.PlaylistId(url) is "WL" or "LL" or "LM" || YtDlpErrorText.NeedsCookies(message))
+            return new PlaylistFetchException(FetchErrorKind.NeedsCookies, $"{message}\n{YtDlpErrorText.CookiesHint}");
+        if (YtDlpErrorText.ContainsAny(message, "Unsupported URL"))
             return new PlaylistFetchException(FetchErrorKind.NotAPlaylist, message);
         return new PlaylistFetchException(FetchErrorKind.Other, message);
     }
-
-    /// <summary><c>ERROR: [youtube:tab] PLxyz: The playlist does not exist.</c> → <c>The playlist does not exist.</c></summary>
-    private static string CleanErrorLine(string line)
-    {
-        var s = line.StartsWith("ERROR:", StringComparison.Ordinal) ? line["ERROR:".Length..].TrimStart() : line;
-        if (s.StartsWith('['))
-        {
-            var close = s.IndexOf(']');
-            if (close > 0) s = s[(close + 1)..].TrimStart();
-            // Drop the "<id>: " prefix yt-dlp puts before the message.
-            var colon = s.IndexOf(": ", StringComparison.Ordinal);
-            if (colon > 0 && !s.AsSpan(0, colon).Contains(' ')) s = s[(colon + 2)..];
-        }
-        return s.Length > 0 ? s : line;
-    }
-
-    private static bool ContainsAny(string s, params string[] needles) =>
-        needles.Any(n => s.Contains(n, StringComparison.Ordinal));
 }

@@ -1,0 +1,12 @@
+PSYNC-PP started MetadataParser
+PSYNC-PP finished MetadataParser
+PSYNC-PP started ThumbnailsConvertor
+PSYNC-PP finished ThumbnailsConvertor
+PSYNC-PP started ExtractAudio
+PSYNC-PP finished ExtractAudio
+PSYNC-PP started Metadata
+PSYNC-PP finished Metadata
+PSYNC-PP started EmbedThumbnail
+PSYNC-PP finished EmbedThumbnail
+PSYNC-PP started MoveFiles
+PSYNC-PP finished MoveFiles

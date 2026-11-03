@@ -30,7 +30,7 @@ PlaylistSync.sln
 │  ├─ Models/                      # PlaylistEntry, TrackRecord, TrackStatus, AppSettings, Manifest
 │  ├─ Sources/                     # IPlaylistSource, YtDlpPlaylistSource (flat playlist fetch)
 │  ├─ Tools/                       # ToolLocator, ToolInstaller (download/update yt-dlp, ffmpeg), ProcessRunner
-│  ├─ Download/                    # YtDlpArgsBuilder, YtDlpDownloader (progress parsing), DownloadQueue
+│  ├─ Download/                    # YtDlpArgsBuilder, YtDlpTrackDownloader, DownloadOutputParser, FilePlacer
 │  ├─ Sync/                        # SyncPlanner (pure diff), SyncService (orchestration, cancellation)
 │  └─ Storage/                     # ConfigStore (app dir), ManifestStore (per directory), atomic writes
 ├─ src/PlaylistSync.App/           # Avalonia UI
@@ -96,11 +96,18 @@ finishes, so a crash or cancel loses at most the in-flight tracks.
    - remote entry marked private/deleted → `Unavailable` (file and known metadata kept)
    - manifest ∖ remote, never downloaded (no file recorded) → dropped from the manifest (nothing to highlight)
    - interrupted `Downloading` from a crash → requeued
-3. **Execute**: `DownloadQueue` with configurable concurrency (default 2). One yt-dlp
+3. **Execute**: `SyncService` runs the downloads with `Parallel.ForEachAsync` at the configured concurrency (default 2). One yt-dlp
    process per track (`https://www.youtube.com/watch?v=<id>`) using the args from
-   `YtDlpArgsBuilder`, `--newline --progress-template` for machine-readable progress, and
-   `--print after_move:filepath` to learn the final filename. Update the manifest and UI after each track.
-4. **Cancel**: a `CancellationToken` kills the process tree. Partial `.part` files are left for yt-dlp to resume or clean up.
+   `YtDlpArgsBuilder`, `--newline --progress --progress-template` for machine-readable progress (download progress on stdout,
+   post-processor steps on stderr), and `--print after_move:filepath` to learn the final filename. Each track downloads into
+   `<dir>/.playlist-sync-tmp/<id>/` (hidden, skipped by the folder scan); the finished file is then moved into the folder by
+   `FilePlacer`, which never overwrites (collision → ` [<id>]`, then a counter). The manifest is saved after each track (under a
+   lock, in order) and the UI gets `SyncEvent`s. ffmpeg is required only when something needs downloading.
+   Download errors: private/deleted/"video unavailable" → `Unavailable`; everything else → `Failed` with a user-facing
+   message (cookies hint for sign-in walls, rate-limit hint, mutagen hint for covers in opus/ogg/flac).
+4. **Cancel**: a `CancellationToken` kills the process tree. Finished tracks stay saved, in-flight ones go back to `Pending`.
+   Temp dirs of unfinished tracks are kept so yt-dlp resumes the `.part` file; the others (and an empty temp root) are removed.
+   A hard kill leaves in-flight tracks as `Downloading`, which the planner requeues.
 5. **Unmanaged files**: audio files in the directory that the manifest doesn't know about are shown in a separate "Untracked" filter. They are never touched.
 
 Only one sync per playlist runs at a time. "Sync all" runs the playlists one after another.
@@ -180,4 +187,10 @@ Only one sync per playlist runs at a time. "Sync all" runs the playlists one aft
 - [x] M2 Storage + models: `DownloadOptions`/`AppSettings`/`PlaylistEntry`/`Manifest`, atomic JSON writes, `ConfigStore` (corrupt config → moved aside, defaults), `ManifestStore` (corrupt manifest → error, never overwritten; serialized writes); 10 tests. Concurrency is a global setting (`AppSettings.Concurrency`), not per playlist
 - [x] M3 Tools: `ProcessRunner`/`IProcessRunner` (argument list, closed stdin, UTF-8, line streaming, bounded stderr tail, cancel kills the process tree), `ToolLocator` (configured → managed bin dir → PATH; a missing configured path is reported, not silently replaced; ffprobe looked for next to a configured ffmpeg; JS runtime prefers deno, then node, bun), `ToolChecker` (version probe with 20 s timeout, `ToolStatus` with user-facing error); 41 new test cases (57 total)
 - [x] M4 Remote fetch + planner: `IPlaylistSource` + `YtDlpPlaylistSource` (tool lookup, user-facing `PlaylistFetchException` with kinds; bot check / sign-in / WL·LL·LM → "set up cookies" hint), `FlatPlaylistParser` (fixture from real yt-dlp 2026.10.26 output), `YouTubeUrl`, `YtDlpArgsBuilder.PlaylistFetch` + shared JS-runtime/cookies/proxy args, pure `SyncPlanner` (new manifest copy, download list in remote order, change list, untracked audio files, different-playlist flag) and `DiskSnapshot` (platform case rules, `/` separators); `Manifest.PlaylistId`; smoke-tested against live YouTube (playlist, YT Music URL, video, channel, bad id, WL); 103 new test cases (160 total). Extra raw args are not applied to the fetch, only to downloads (M5)
-- [ ] M5 Downloader
+- [x] M5 Downloader: `YtDlpArgsBuilder.TrackDownload` (every §6 download setting; artist/title parsed from the title only when YouTube
+  has no artist; square cover crop; WAV never embeds a cover; track-number prefix goes before the file name, not a template folder;
+  `--no-mtime`; extra args via a shell-free `CommandLineSplitter`, placed last so they can override), `DownloadOutputParser`
+  (fixtures recorded from yt-dlp 2026.10.26), `YtDlpTrackDownloader` (per-track temp dir, throttled progress, error
+  classification), `FilePlacer`, `SyncService` (one sync per folder, different-playlist guard, `SyncException` kinds, cancel
+  handling, temp cleanup), optional `.m3u8` (`M3uWriter`, remote order, removed/missing tracks left out). Smoke-tested live:
+  ~100-track sync, hard kill mid-sync + resume, token cancel (no orphan processes), no-op re-sync. 95 new test cases (255 total)
