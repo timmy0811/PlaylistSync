@@ -174,4 +174,5 @@ Only one sync per playlist runs at a time. "Sync all" runs the playlists one aft
 ## 11. Progress
 
 - [x] M1 Scaffold: solution (.slnx, central package versions), Core/App/Tests projects, DI, file logging, Fluent theme with light/dark brushes, placeholder main window, AppPaths + tests
-- [ ] M2 Storage + models
+- [x] M2 Storage + models: `DownloadOptions`/`AppSettings`/`PlaylistEntry`/`Manifest`, atomic JSON writes, `ConfigStore` (corrupt config → moved aside, defaults), `ManifestStore` (corrupt manifest → error, never overwritten; serialized writes); 10 tests. Concurrency is a global setting (`AppSettings.Concurrency`), not per playlist
+- [ ] M3 Tools (locator, version probe, process runner)

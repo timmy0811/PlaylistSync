@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
 using PlaylistSync.Core.Logging;
+using PlaylistSync.Core.Storage;
 
 namespace PlaylistSync.App;
 
@@ -51,6 +52,8 @@ internal static class Program
             b.SetMinimumLevel(LogLevel.Debug);
 #endif
         });
+        sc.AddSingleton<ConfigStore>();
+        sc.AddSingleton<ManifestStore>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }
