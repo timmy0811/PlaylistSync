@@ -11,8 +11,19 @@ public sealed class Manifest
 
     public int Version { get; set; } = CurrentVersion;
     public string? PlaylistUrl { get; set; }
+    /// <summary>Remote playlist id (e.g. <c>PL…</c>); used to warn when a folder is reused for another playlist.</summary>
+    public string? PlaylistId { get; set; }
     public string? PlaylistTitle { get; set; }
     public Dictionary<string, TrackRecord> Tracks { get; set; } = new(StringComparer.Ordinal);
+
+    public Manifest Clone() => new()
+    {
+        Version = Version,
+        PlaylistUrl = PlaylistUrl,
+        PlaylistId = PlaylistId,
+        PlaylistTitle = PlaylistTitle,
+        Tracks = Tracks.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal),
+    };
 }
 
 public sealed class TrackRecord
@@ -29,4 +40,7 @@ public sealed class TrackRecord
     public DateTimeOffset? LastSeenRemote { get; set; }
     public DateTimeOffset? DownloadedAt { get; set; }
     public string? LastError { get; set; }
+
+    /// <summary>All members are immutable values, so a memberwise copy is a deep copy.</summary>
+    public TrackRecord Clone() => (TrackRecord)MemberwiseClone();
 }

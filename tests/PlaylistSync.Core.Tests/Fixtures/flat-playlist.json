@@ -1,0 +1,164 @@
+{
+ "id": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+ "title": "Popular Music Videos",
+ "availability": "public",
+ "description": "",
+ "modified_date": "20260717",
+ "playlist_count": 6,
+ "channel": "Music",
+ "channel_id": "UC-9-kyTW8ZkZNDHQJ6FgpwQ",
+ "uploader": "Music",
+ "channel_url": "https://www.youtube.com/channel/UC-9-kyTW8ZkZNDHQJ6FgpwQ",
+ "_type": "playlist",
+ "extractor_key": "YoutubeTab",
+ "extractor": "youtube:tab",
+ "webpage_url": "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+ "original_url": "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+ "epoch": 1793744732,
+ "entries": [
+  {
+   "title": "BELLAKEO (Video Oficial) - Peso Pluma, Anitta",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/fOT0BUpITw8/hqdefault.jpg?sqp=-oaymwEbCKgBEF5IVfKriqkDDggBFQAAiEIYAXABwAEG&rs=AOn4CLCHzPOFWFFW5Mokwjjn3GfsT0Crgw",
+     "height": 94,
+     "width": 168
+    }
+   ],
+   "duration": 235,
+   "view_count": 773000000,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": "https://www.youtube.com/channel/UCzrM_068Odho89mTRrrxqbA",
+   "uploader_url": null,
+   "creators": null,
+   "channel": "Peso Pluma",
+   "channel_id": "UCzrM_068Odho89mTRrrxqbA",
+   "uploader": "Peso Pluma",
+   "ie_key": "Youtube",
+   "id": "fOT0BUpITw8",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=fOT0BUpITw8",
+   "__x_forwarded_for_ip": null
+  },
+  {
+   "title": "[Private video]",
+   "thumbnails": [],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "channel": null,
+   "channel_id": null,
+   "uploader": null,
+   "ie_key": "Youtube",
+   "id": "AAAAAAAAAA1",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=AAAAAAAAAA1",
+   "__x_forwarded_for_ip": null
+  },
+  {
+   "title": "Arcángel - FN8 ( Video Lyric )",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/NFvDHYMzj9U/hqdefault.jpg?sqp=-oaymwE1CKgBEF5IVfKriqkDKAgBFQAAiEIYAXABwAEG8AEB-AH-CYAC0AWKAgwIABABGGMgYyhjMA8=&rs=AOn4CLC2cxV0RGe02JTa9EYZAoxRX3vWxw",
+     "height": 94,
+     "width": 168
+    }
+   ],
+   "duration": 650,
+   "view_count": 32000000,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": "https://www.youtube.com/channel/UCu4bj03KW4CwAsYtHSwMEsQ",
+   "uploader_url": null,
+   "creators": null,
+   "channel": "Arcangel",
+   "channel_id": "UCu4bj03KW4CwAsYtHSwMEsQ",
+   "uploader": "Arcangel",
+   "ie_key": "Youtube",
+   "id": "NFvDHYMzj9U",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=NFvDHYMzj9U",
+   "__x_forwarded_for_ip": null
+  },
+  {
+   "title": "Becky G - POR EL CONTRARIO (Performance Video) ft. Ángela Aguilar, Leonardo Aguilar",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/8c7KOGxeY3w/hqdefault.jpg?sqp=-oaymwEbCKgBEF5IVfKriqkDDggBFQAAiEIYAXABwAEG&rs=AOn4CLAy4ve2qesLtuHOutauC7ElmaBGXw",
+     "height": 94,
+     "width": 168
+    }
+   ],
+   "duration": 235,
+   "view_count": 793000000,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": "https://www.youtube.com/channel/UCgtNC51EUSgcZ6kKyVoPxKA",
+   "uploader_url": null,
+   "creators": null,
+   "channel": "Becky G",
+   "channel_id": "UCgtNC51EUSgcZ6kKyVoPxKA",
+   "uploader": "Becky G",
+   "ie_key": "Youtube",
+   "id": "8c7KOGxeY3w",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=8c7KOGxeY3w",
+   "__x_forwarded_for_ip": null
+  },
+  {
+   "title": "[Deleted video]",
+   "thumbnails": [],
+   "duration": null,
+   "view_count": null,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": null,
+   "uploader_url": null,
+   "creators": null,
+   "channel": null,
+   "channel_id": null,
+   "uploader": null,
+   "ie_key": "Youtube",
+   "id": "AAAAAAAAAA2",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=AAAAAAAAAA2",
+   "__x_forwarded_for_ip": null
+  },
+  {
+   "title": "BELLAKEO (Video Oficial) - Peso Pluma, Anitta",
+   "thumbnails": [
+    {
+     "url": "https://i.ytimg.com/vi/fOT0BUpITw8/hqdefault.jpg?sqp=-oaymwEbCKgBEF5IVfKriqkDDggBFQAAiEIYAXABwAEG&rs=AOn4CLCHzPOFWFFW5Mokwjjn3GfsT0Crgw",
+     "height": 94,
+     "width": 168
+    }
+   ],
+   "duration": 235,
+   "view_count": 773000000,
+   "timestamp": null,
+   "live_status": null,
+   "availability": null,
+   "channel_url": "https://www.youtube.com/channel/UCzrM_068Odho89mTRrrxqbA",
+   "uploader_url": null,
+   "creators": null,
+   "channel": "Peso Pluma",
+   "channel_id": "UCzrM_068Odho89mTRrrxqbA",
+   "uploader": "Peso Pluma",
+   "ie_key": "Youtube",
+   "id": "fOT0BUpITw8",
+   "_type": "url",
+   "url": "https://www.youtube.com/watch?v=fOT0BUpITw8",
+   "__x_forwarded_for_ip": null
+  }
+ ]
+}

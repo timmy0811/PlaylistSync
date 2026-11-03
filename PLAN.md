@@ -83,16 +83,19 @@ finishes, so a crash or cancel loses at most the in-flight tracks.
 
 ## 5. Sync algorithm
 
-1. **Fetch remote**: `yt-dlp --flat-playlist -J --no-warnings <url>` gives entries
-   (`id`, `title`, `uploader`/`channel`, `duration`, availability). Stream the stdout
-   JSON with `System.Text.Json`.
+1. **Fetch remote**: `yt-dlp --ignore-config --flat-playlist --dump-single-json --yes-playlist [--js-runtimes …] [cookies/proxy] -- <url>`
+   gives entries (`id`, `title`, `channel`/`uploader`, `duration`, availability). `--ignore-config` so a user's
+   yt-dlp config can't change behaviour. Warnings go to the debug log. Single-video and channel URLs are rejected
+   with a clear message; duplicates keep their first position; `[Private video]`/`[Deleted video]`/upcoming → unavailable.
 2. **Plan** (`SyncPlanner`, a pure function, unit-tested):
    - remote ∖ manifest → `Pending` (download)
    - manifest ∖ remote → `RemovedRemote` (keep the file, highlight)
    - in both, but status `RemovedRemote` → back to `Synced` (re-added remotely)
    - in both, `Synced`, file missing on disk → `MissingLocal`. Setting: re-download automatically (default **on**)
    - in both, `Failed` → retry
-   - remote entry marked private/deleted → `Unavailable`
+   - remote entry marked private/deleted → `Unavailable` (file and known metadata kept)
+   - manifest ∖ remote, never downloaded (no file recorded) → dropped from the manifest (nothing to highlight)
+   - interrupted `Downloading` from a crash → requeued
 3. **Execute**: `DownloadQueue` with configurable concurrency (default 2). One yt-dlp
    process per track (`https://www.youtube.com/watch?v=<id>`) using the args from
    `YtDlpArgsBuilder`, `--newline --progress-template` for machine-readable progress, and
@@ -176,4 +179,5 @@ Only one sync per playlist runs at a time. "Sync all" runs the playlists one aft
 - [x] M1 Scaffold: solution (.slnx, central package versions), Core/App/Tests projects, DI, file logging, Fluent theme with light/dark brushes, placeholder main window, AppPaths + tests
 - [x] M2 Storage + models: `DownloadOptions`/`AppSettings`/`PlaylistEntry`/`Manifest`, atomic JSON writes, `ConfigStore` (corrupt config → moved aside, defaults), `ManifestStore` (corrupt manifest → error, never overwritten; serialized writes); 10 tests. Concurrency is a global setting (`AppSettings.Concurrency`), not per playlist
 - [x] M3 Tools: `ProcessRunner`/`IProcessRunner` (argument list, closed stdin, UTF-8, line streaming, bounded stderr tail, cancel kills the process tree), `ToolLocator` (configured → managed bin dir → PATH; a missing configured path is reported, not silently replaced; ffprobe looked for next to a configured ffmpeg; JS runtime prefers deno, then node, bun), `ToolChecker` (version probe with 20 s timeout, `ToolStatus` with user-facing error); 41 new test cases (57 total)
-- [ ] M4 Remote fetch + planner
+- [x] M4 Remote fetch + planner: `IPlaylistSource` + `YtDlpPlaylistSource` (tool lookup, user-facing `PlaylistFetchException` with kinds; bot check / sign-in / WL·LL·LM → "set up cookies" hint), `FlatPlaylistParser` (fixture from real yt-dlp 2026.10.26 output), `YouTubeUrl`, `YtDlpArgsBuilder.PlaylistFetch` + shared JS-runtime/cookies/proxy args, pure `SyncPlanner` (new manifest copy, download list in remote order, change list, untracked audio files, different-playlist flag) and `DiskSnapshot` (platform case rules, `/` separators); `Manifest.PlaylistId`; smoke-tested against live YouTube (playlist, YT Music URL, video, channel, bad id, WL); 103 new test cases (160 total). Extra raw args are not applied to the fetch, only to downloads (M5)
+- [ ] M5 Downloader

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
 using PlaylistSync.Core.Logging;
+using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Storage;
 using PlaylistSync.Core.Tools;
 
@@ -58,6 +59,7 @@ internal static class Program
         sc.AddSingleton<IProcessRunner, ProcessRunner>();
         sc.AddSingleton<ToolLocator>();
         sc.AddSingleton<ToolChecker>();
+        sc.AddSingleton<IPlaylistSource, YtDlpPlaylistSource>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }
