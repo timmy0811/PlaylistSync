@@ -1,0 +1,12 @@
+An application that manages a list of tuples, a tuple consists of a link to a youtube/Spotify playlist and a local directory.
+After creating this tuple the user shall be able to sync the directory content with the playlist tracks. For this it uses yt-dlp to download each track that is part of that playlist
+and puts it into the directory as an audio file. if the remote playlist removes one track. the app shall highlight this deletion and mark the file as removed in remote (no autodelete).
+the app shall not autosync but provide a sync button that can be manually trigger the syncing.
+
+I also need a settings menu in which you can set different settings for the download using yt-dlp and what is suiteable furthermore (meta data, thumbnails, bitrate, cookies).
+
+The app shall provide a nice but minimalistic ui.
+
+Make up the tech stack on your own, you now better what is suitable for this. I like C++ or C# but decide on your own.
+
+The app must be deployable to Linux (arch, ...) and less important windows. It shall not be a web application that opens in a browser, instead a native desktop app.

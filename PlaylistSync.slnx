@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PlaylistSync.Core/PlaylistSync.Core.csproj" />
+    <Project Path="src/PlaylistSync.App/PlaylistSync.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PlaylistSync.Core.Tests/PlaylistSync.Core.Tests.csproj" />
+  </Folder>
+</Solution>
