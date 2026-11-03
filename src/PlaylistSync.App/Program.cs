@@ -5,6 +5,7 @@ using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
 using PlaylistSync.Core.Logging;
 using PlaylistSync.Core.Storage;
+using PlaylistSync.Core.Tools;
 
 namespace PlaylistSync.App;
 
@@ -54,6 +55,9 @@ internal static class Program
         });
         sc.AddSingleton<ConfigStore>();
         sc.AddSingleton<ManifestStore>();
+        sc.AddSingleton<IProcessRunner, ProcessRunner>();
+        sc.AddSingleton<ToolLocator>();
+        sc.AddSingleton<ToolChecker>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }

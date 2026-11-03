@@ -175,4 +175,5 @@ Only one sync per playlist runs at a time. "Sync all" runs the playlists one aft
 
 - [x] M1 Scaffold: solution (.slnx, central package versions), Core/App/Tests projects, DI, file logging, Fluent theme with light/dark brushes, placeholder main window, AppPaths + tests
 - [x] M2 Storage + models: `DownloadOptions`/`AppSettings`/`PlaylistEntry`/`Manifest`, atomic JSON writes, `ConfigStore` (corrupt config → moved aside, defaults), `ManifestStore` (corrupt manifest → error, never overwritten; serialized writes); 10 tests. Concurrency is a global setting (`AppSettings.Concurrency`), not per playlist
-- [ ] M3 Tools (locator, version probe, process runner)
+- [x] M3 Tools: `ProcessRunner`/`IProcessRunner` (argument list, closed stdin, UTF-8, line streaming, bounded stderr tail, cancel kills the process tree), `ToolLocator` (configured → managed bin dir → PATH; a missing configured path is reported, not silently replaced; ffprobe looked for next to a configured ffmpeg; JS runtime prefers deno, then node, bun), `ToolChecker` (version probe with 20 s timeout, `ToolStatus` with user-facing error); 41 new test cases (57 total)
+- [ ] M4 Remote fetch + planner
