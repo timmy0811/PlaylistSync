@@ -9,6 +9,8 @@
           <SolidColorBrush x:Key="MutedTextBrush" Color="#6B6B76" />
           <SolidColorBrush x:Key="RemovedRowBrush" Color="#FFF4E0" />
           <SolidColorBrush x:Key="UnavailableRowBrush" Color="#EEEEF2" />
+          <SolidColorBrush x:Key="AttentionBrush" Color="#D98A00" />
+          <SolidColorBrush x:Key="ErrorBrush" Color="#C4314B" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
           <SolidColorBrush x:Key="SidebarBrush" Color="#1E1E22" />
@@ -16,6 +18,8 @@
           <SolidColorBrush x:Key="MutedTextBrush" Color="#9A9AA6" />
           <SolidColorBrush x:Key="RemovedRowBrush" Color="#3A2E14" />
           <SolidColorBrush x:Key="UnavailableRowBrush" Color="#2A2A30" />
+          <SolidColorBrush x:Key="AttentionBrush" Color="#F0A830" />
+          <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B81" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
     </ResourceDictionary>
@@ -27,5 +31,55 @@
   <Style Selector="TextBlock.h1">
     <Setter Property="FontSize" Value="20" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="TextBlock.error">
+    <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.warning">
+    <Setter Property="Foreground" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+  <Style Selector="TextBlock.hint">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+
+  <!-- Playlist status dot -->
+  <Style Selector="Ellipse.dot">
+    <Setter Property="Width" Value="9" />
+    <Setter Property="Height" Value="9" />
+    <Setter Property="Stroke" Value="{DynamicResource MutedTextBrush}" />
+    <Setter Property="StrokeThickness" Value="1.5" />
+  </Style>
+  <Style Selector="Ellipse.dot.ok">
+    <Setter Property="Fill" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+    <Setter Property="StrokeThickness" Value="0" />
+  </Style>
+  <Style Selector="Ellipse.dot.attention">
+    <Setter Property="Fill" Value="{DynamicResource AttentionBrush}" />
+    <Setter Property="StrokeThickness" Value="0" />
+  </Style>
+  <Style Selector="Ellipse.dot.error">
+    <Setter Property="Fill" Value="{DynamicResource ErrorBrush}" />
+    <Setter Property="StrokeThickness" Value="0" />
+  </Style>
+
+  <!-- Flat link-like button (folder path in the header) -->
+  <Style Selector="Button.link">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+  </Style>
+  <Style Selector="Button.link:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Button.link:pointerover TextBlock">
+    <Setter Property="TextDecorations" Value="Underline" />
+  </Style>
+
+  <Style Selector="Button.danger">
+    <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
   </Style>
 </Styles>

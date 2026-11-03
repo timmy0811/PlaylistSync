@@ -5,31 +5,101 @@
         x:DataType="vm:MainWindowViewModel"
         Title="Playlist Sync"
         Width="1100" Height="700" MinWidth="720" MinHeight="420">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+N" Command="{Binding AddPlaylistCommand}" />
+  </Window.KeyBindings>
+
   <DockPanel>
     <!-- Status bar -->
     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource DividerBrush}"
             BorderThickness="0,1,0,0" Padding="12,6">
-      <TextBlock Classes="muted" Text="{Binding StatusText}" />
+      <TextBlock Classes="muted" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
     </Border>
 
     <Grid ColumnDefinitions="260,*">
       <!-- Sidebar: playlist list -->
       <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
               BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,1,0">
-        <DockPanel Margin="12">
-          <TextBlock DockPanel.Dock="Top" Classes="h1" Text="Playlists" Margin="4,0,0,12" />
-          <Button DockPanel.Dock="Top" HorizontalAlignment="Stretch" Content="+ Add playlist" IsEnabled="False" />
-          <TextBlock Classes="muted" Margin="4,16" TextWrapping="Wrap"
-                     Text="No playlists yet." />
+        <DockPanel Margin="8,12">
+          <TextBlock DockPanel.Dock="Top" Classes="h1" Text="Playlists" Margin="8,0,0,12" />
+          <Button DockPanel.Dock="Top" HorizontalAlignment="Stretch" Margin="4,0,4,8"
+                  Content="+ Add playlist" Command="{Binding AddPlaylistCommand}"
+                  ToolTip.Tip="Add a playlist (Ctrl+N)" />
+          <Panel>
+            <TextBlock Classes="muted" Margin="8,8" TextWrapping="Wrap" Text="No playlists yet."
+                       IsVisible="{Binding IsEmpty}" />
+            <ListBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}"
+                     Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaylistItemViewModel">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding HealthTip}">
+                    <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
+                             Classes.ok="{Binding IsOk}" Classes.attention="{Binding NeedsAttention}"
+                             Classes.error="{Binding HasError}" />
+                    <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Classes="muted" Text="{Binding CountText}" Margin="8,0,0,0"
+                               VerticalAlignment="Center" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Panel>
         </DockPanel>
       </Border>
 
       <!-- Detail: empty state -->
-      <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+      <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6"
+                  IsVisible="{Binding !HasSelection}">
         <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Nothing selected" />
         <TextBlock Classes="muted" HorizontalAlignment="Center"
                    Text="Add a YouTube playlist and a folder to get started." />
+        <Button HorizontalAlignment="Center" Margin="0,10,0,0" Classes="accent"
+                Content="Add playlist" Command="{Binding AddPlaylistCommand}" IsVisible="{Binding IsEmpty}" />
       </StackPanel>
+
+      <!-- Detail: selected playlist -->
+      <DockPanel Grid.Column="1" Margin="20,16" IsVisible="{Binding HasSelection}">
+        <StackPanel DockPanel.Dock="Top" Spacing="4" DataContext="{Binding SelectedPlaylist}"
+                    x:DataType="vm:PlaylistItemViewModel">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Classes="h1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+              <Button Content="Edit" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).EditPlaylistCommand}"
+                      ToolTip.Tip="Change name, URL or folder" />
+              <Button Content="⋯" ToolTip.Tip="More">
+                <Button.Flyout>
+                  <MenuFlyout Placement="BottomEdgeAlignedRight">
+                    <MenuItem Header="Open folder" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}" />
+                    <MenuItem Header="Copy URL" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyUrlCommand}" />
+                    <Separator />
+                    <MenuItem Header="Move up" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveUpCommand}" />
+                    <MenuItem Header="Move down" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveDownCommand}" />
+                    <Separator />
+                    <MenuItem Header="Remove from library…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemovePlaylistCommand}" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </StackPanel>
+          </Grid>
+          <SelectableTextBlock Classes="muted" Text="{Binding Url}" TextTrimming="CharacterEllipsis" />
+          <Button Classes="link" HorizontalAlignment="Left"
+                  Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}"
+                  ToolTip.Tip="Open in file manager">
+            <TextBlock Text="{Binding DisplayDirectory, StringFormat='📁 {0}'}" TextTrimming="CharacterEllipsis" />
+          </Button>
+          <TextBlock Classes="muted" Margin="0,6,0,0">
+            <Run Text="{Binding SummaryText}" />
+            <Run Text=" · " />
+            <Run Text="{Binding LastSyncText}" />
+          </TextBlock>
+          <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="0,12,0,0" />
+        </StackPanel>
+
+        <!-- Track list arrives with milestone 7 -->
+        <TextBlock Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Text="The track list will appear here." />
+      </DockPanel>
     </Grid>
   </DockPanel>
 </Window>

@@ -194,3 +194,13 @@ Only one sync per playlist runs at a time. "Sync all" runs the playlists one aft
   classification), `FilePlacer`, `SyncService` (one sync per folder, different-playlist guard, `SyncException` kinds, cancel
   handling, temp cleanup), optional `.m3u8` (`M3uWriter`, remote order, removed/missing tracks left out). Smoke-tested live:
   ~100-track sync, hard kill mid-sync + resume, token cancel (no orphan processes), no-op re-sync. 95 new test cases (255 total)
+- [x] M6 Library UI: Core `PlaylistLibrary` (load/add/update/remove/reorder, applied in memory only after a successful save;
+  removing never touches the folder), pure `PlaylistValidator` (YouTube URL, full path with `~` expansion, no drive root /
+  home, no folder shared with or nested in another playlist's, platform case rules), `FolderInspector` (missing / empty /
+  has files / same or different playlist manifest / corrupt), `ManifestSummary`, `RelativeTime`, `PathUtil.SafeFolderName`.
+  App: `PlaylistLibrary`/`SettingsService`/`IDialogService` in DI; sidebar with status dot (accent = up to date, amber =
+  needs attention, red = manifest unreadable, hollow = never synced) and track count; detail header (URL, folder link opens
+  the file manager, summary, last sync, ⋯ menu: open folder, copy URL, move up/down, remove); add/edit dialog with a
+  debounced yt-dlp check that shows title + track count and prefills name and `~/Music/<title>`, folder picker, inline
+  errors, folder notes; remove confirmation (Cancel focused). Ctrl+N adds. Checked in the running app under Xvfb with a live
+  playlist. 54 new test cases (309 total)

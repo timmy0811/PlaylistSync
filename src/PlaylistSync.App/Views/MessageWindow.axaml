@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PlaylistSync.App.Views.MessageWindow"
+        Width="440" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock x:Name="HeaderText" Classes="h1" TextWrapping="Wrap" />
+    <SelectableTextBlock x:Name="MessageText" TextWrapping="Wrap" />
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,6,0,0">
+      <Button x:Name="CancelButton" IsCancel="True" />
+      <Button x:Name="ConfirmButton" Classes="accent" IsDefault="True" />
+    </StackPanel>
+  </StackPanel>
+</Window>

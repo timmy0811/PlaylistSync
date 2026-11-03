@@ -1,10 +1,12 @@
 using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using PlaylistSync.App.Services;
 using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
 using PlaylistSync.Core.Download;
 using PlaylistSync.Core.Logging;
+using PlaylistSync.Core.Playlists;
 using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Storage;
 using PlaylistSync.Core.Sync;
@@ -65,6 +67,9 @@ internal static class Program
         sc.AddSingleton(TimeProvider.System);
         sc.AddSingleton<ITrackDownloader, YtDlpTrackDownloader>();
         sc.AddSingleton<SyncService>();
+        sc.AddSingleton<PlaylistLibrary>();
+        sc.AddSingleton<SettingsService>();
+        sc.AddSingleton<IDialogService, DialogService>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }
