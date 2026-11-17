@@ -7,21 +7,43 @@
         Width="1100" Height="700" MinWidth="720" MinHeight="420">
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+N" Command="{Binding AddPlaylistCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding SyncCommand}" />
+    <KeyBinding Gesture="Shift+F5" Command="{Binding SyncAllCommand}" />
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenSettingsCommand}" />
+    <KeyBinding Gesture="Ctrl+T" Command="{Binding OpenToolboxCommand}" />
   </Window.KeyBindings>
 
   <DockPanel>
     <!-- Status bar -->
     <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource DividerBrush}"
-            BorderThickness="0,1,0,0" Padding="12,6">
-      <TextBlock Classes="muted" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" />
+            BorderThickness="0,1,0,0" Padding="12,4" MinHeight="34">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock Classes="muted" Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Classes="muted" Text="{Binding ActivityText}" Margin="12,0" MaxWidth="420"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" IsVisible="{Binding IsAnySyncing}" />
+        <Button Grid.Column="2" Classes="small" Content="Cancel all" Command="{Binding CancelAllCommand}"
+                IsVisible="{Binding IsAnySyncing}" ToolTip.Tip="Stop every running sync. Finished tracks are kept." />
+      </Grid>
     </Border>
 
-    <Grid ColumnDefinitions="260,*">
+    <Grid ColumnDefinitions="290,*">
       <!-- Sidebar: playlist list -->
       <Border Grid.Column="0" Background="{DynamicResource SidebarBrush}"
               BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,1,0">
         <DockPanel Margin="8,12">
-          <TextBlock DockPanel.Dock="Top" Classes="h1" Text="Playlists" Margin="8,0,0,12" />
+          <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="8,0,4,12">
+            <TextBlock Classes="h1" Text="Playlists" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Classes="small" Content="Sync all" Command="{Binding SyncAllCommand}"
+                    ToolTip.Tip="Sync every playlist, one after another (Shift+F5)" />
+            <Button Grid.Column="2" Classes="small icon" Margin="6,0,0,0" Command="{Binding OpenToolboxCommand}"
+                    ToolTip.Tip="Toolbox: download a single video or track, and other utilities (Ctrl+T)">
+              <PathIcon Data="{StaticResource ToolboxIcon}" />
+            </Button>
+            <Button Grid.Column="3" Classes="small icon" Margin="6,0,0,0" Command="{Binding OpenSettingsCommand}"
+                    ToolTip.Tip="Settings (Ctrl+,)">
+              <PathIcon Data="{StaticResource SettingsIcon}" />
+            </Button>
+          </Grid>
           <Button DockPanel.Dock="Top" HorizontalAlignment="Stretch" Margin="4,0,4,8"
                   Content="+ Add playlist" Command="{Binding AddPlaylistCommand}"
                   ToolTip.Tip="Add a playlist (Ctrl+N)" />
@@ -33,13 +55,24 @@
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
                   <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding HealthTip}">
-                    <Ellipse Grid.Column="0" Classes="dot" Margin="0,0,10,0" VerticalAlignment="Center"
-                             Classes.ok="{Binding IsOk}" Classes.attention="{Binding NeedsAttention}"
-                             Classes.error="{Binding HasError}" />
+                    <Panel Grid.Column="0" Width="34" Height="34" Margin="0,0,10,0" VerticalAlignment="Center">
+                      <Border Classes="cover small">
+                        <Panel>
+                          <TextBlock Classes="cover-placeholder" Text="♪" IsVisible="{Binding !HasCover}" />
+                          <Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding HasCover}"
+                         RenderOptions.BitmapInterpolationMode="MediumQuality" />
+                        </Panel>
+                      </Border>
+                      <Ellipse Classes="dot badge" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-3,-3"
+                               Classes.ok="{Binding IsOk}" Classes.attention="{Binding NeedsAttention}"
+                               Classes.error="{Binding HasError}" />
+                    </Panel>
                     <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center" />
                     <TextBlock Grid.Column="2" Classes="muted" Text="{Binding CountText}" Margin="8,0,0,0"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center" IsVisible="{Binding !IsSyncing}" />
+                    <TextBlock Grid.Column="2" Classes="syncing" Text="↻" Margin="8,0,0,0" VerticalAlignment="Center"
+                               IsVisible="{Binding IsSyncing}" ToolTip.Tip="{Binding SyncText}" />
                   </Grid>
                 </DataTemplate>
               </ListBox.ItemTemplate>
@@ -59,47 +92,174 @@
       </StackPanel>
 
       <!-- Detail: selected playlist -->
-      <DockPanel Grid.Column="1" Margin="20,16" IsVisible="{Binding HasSelection}">
-        <StackPanel DockPanel.Dock="Top" Spacing="4" DataContext="{Binding SelectedPlaylist}"
-                    x:DataType="vm:PlaylistItemViewModel">
-          <Grid ColumnDefinitions="*,Auto">
-            <TextBlock Classes="h1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-              <Button Content="Edit" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).EditPlaylistCommand}"
-                      ToolTip.Tip="Change name, URL or folder" />
-              <Button Content="⋯" ToolTip.Tip="More">
-                <Button.Flyout>
-                  <MenuFlyout Placement="BottomEdgeAlignedRight">
-                    <MenuItem Header="Open folder" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}" />
-                    <MenuItem Header="Copy URL" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyUrlCommand}" />
-                    <Separator />
-                    <MenuItem Header="Move up" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveUpCommand}" />
-                    <MenuItem Header="Move down" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveDownCommand}" />
-                    <Separator />
-                    <MenuItem Header="Remove from library…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemovePlaylistCommand}" />
-                  </MenuFlyout>
-                </Button.Flyout>
-              </Button>
+      <Panel Grid.Column="1" IsVisible="{Binding HasSelection}">
+        <DockPanel Margin="20,16,20,8" DataContext="{Binding SelectedPlaylist}" x:DataType="vm:PlaylistItemViewModel">
+          <StackPanel DockPanel.Dock="Top" Spacing="4">
+            <Grid ColumnDefinitions="Auto,*">
+            <Border Grid.Column="0" Classes="cover large" Margin="0,0,16,0" VerticalAlignment="Top">
+              <Panel>
+                <TextBlock Classes="cover-placeholder" Text="♪" IsVisible="{Binding !HasCover}" />
+                <Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding HasCover}"
+                         RenderOptions.BitmapInterpolationMode="MediumQuality" />
+              </Panel>
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="4">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="h1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                <Button Content="▶ Play"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlayPlaylistCommand}"
+                        ToolTip.Tip="Play the first downloaded track in your default player (while searching: the first matching track)" />
+                <Button Content="Shuffle"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShufflePlaylistCommand}"
+                        ToolTip.Tip="Play all downloaded tracks in random order (while searching: only the matching tracks). Opens a shuffled .m3u play queue in your default player." />
+                <Button Classes="accent" Content="⟳ Sync" IsVisible="{Binding !IsSyncing}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SyncCommand}"
+                        ToolTip.Tip="Download new tracks and check for removed ones (F5)" />
+                <Button Content="Cancel" IsVisible="{Binding IsSyncing}"
+                        Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CancelSyncCommand}"
+                        ToolTip.Tip="Stop the sync. Finished tracks are kept; unfinished ones resume next time." />
+                <Button Content="Edit" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).EditPlaylistCommand}"
+                        ToolTip.Tip="Change name, URL or folder" />
+                <Button Content="⋯" ToolTip.Tip="More">
+                  <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                      <MenuItem Header="Open folder" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}" />
+                      <MenuItem Header="Copy URL" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyUrlCommand}" />
+                      <MenuItem Header="Download settings…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlaylistSettingsCommand}" />
+                      <Separator />
+                      <MenuItem Header="Move up" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveUpCommand}" />
+                      <MenuItem Header="Move down" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveDownCommand}" />
+                      <Separator />
+                      <MenuItem Header="Remove from library…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemovePlaylistCommand}" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+              </StackPanel>
+            </Grid>
+            <SelectableTextBlock Classes="muted" Text="{Binding Url}" TextTrimming="CharacterEllipsis" />
+            <Button Classes="link" HorizontalAlignment="Left"
+                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}"
+                    ToolTip.Tip="Open in file manager">
+              <TextBlock Text="{Binding DisplayDirectory, StringFormat='📁 {0}'}" TextTrimming="CharacterEllipsis" />
+            </Button>
+            <TextBlock Classes="muted" Margin="0,6,0,0" TextTrimming="CharacterEllipsis">
+              <Run Text="{Binding SummaryText}" />
+              <Run Text=" · " />
+              <Run Text="{Binding LastSyncText}" />
+            </TextBlock>
+            <Button Classes="link" HorizontalAlignment="Left" IsVisible="{Binding HasCustomSettings}"
+                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlaylistSettingsCommand}"
+                    ToolTip.Tip="This playlist uses its own download settings. Click to change them.">
+              <TextBlock Classes="muted" Text="{Binding CustomSettingsText}" TextTrimming="CharacterEllipsis" />
+            </Button>
             </StackPanel>
-          </Grid>
-          <SelectableTextBlock Classes="muted" Text="{Binding Url}" TextTrimming="CharacterEllipsis" />
-          <Button Classes="link" HorizontalAlignment="Left"
-                  Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}"
-                  ToolTip.Tip="Open in file manager">
-            <TextBlock Text="{Binding DisplayDirectory, StringFormat='📁 {0}'}" TextTrimming="CharacterEllipsis" />
-          </Button>
-          <TextBlock Classes="muted" Margin="0,6,0,0">
-            <Run Text="{Binding SummaryText}" />
-            <Run Text=" · " />
-            <Run Text="{Binding LastSyncText}" />
-          </TextBlock>
-          <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="0,12,0,0" />
-        </StackPanel>
+            </Grid>
 
-        <!-- Track list arrives with milestone 7 -->
-        <TextBlock Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center"
-                   Text="The track list will appear here." />
-      </DockPanel>
+            <!-- Sync progress / last error -->
+            <Grid ColumnDefinitions="220,*" Margin="0,6,0,0" IsVisible="{Binding IsSyncing}">
+              <ProgressBar VerticalAlignment="Center" Minimum="0" Maximum="100" Value="{Binding SyncPercent}"
+                           IsIndeterminate="{Binding IsSyncIndeterminate}" />
+              <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding SyncText}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <SelectableTextBlock Classes="error" Margin="0,6,0,0" Text="{Binding SyncError}" IsVisible="{Binding ShowSyncError}"
+                                 TextWrapping="Wrap" />
+
+            <!-- Filters, bulk action, search -->
+            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,12,0,4" DataContext="{Binding Tracks}" x:DataType="vm:TrackListViewModel">
+              <ListBox Classes="chips" ItemsSource="{Binding Chips}" SelectedItem="{Binding SelectedChip}">
+                <ListBox.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                  </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:FilterChipViewModel">
+                    <TextBlock Text="{Binding Text}" />
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <Button Grid.Column="1" Classes="danger small" Margin="8,0" VerticalAlignment="Center"
+                      Content="{Binding DeleteRemovedText}"
+                      Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteRemovedFilesCommand}"
+                      ToolTip.Tip="Delete the local files of all tracks removed from the remote playlist">
+                <Button.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="IsRemovedFilter" />
+                    <Binding Path="HasDeletableRemoved" />
+                  </MultiBinding>
+                </Button.IsVisible>
+              </Button>
+              <TextBox Grid.Column="2" Width="220" VerticalAlignment="Center" PlaceholderText="Search"
+                       Text="{Binding SearchText}" />
+            </Grid>
+            <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="0,4,0,0" />
+          </StackPanel>
+
+          <!-- Track list -->
+          <Panel DataContext="{Binding Tracks}" x:DataType="vm:TrackListViewModel">
+            <TextBlock Classes="muted" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" />
+            <ListBox x:Name="TrackList" Classes="tracks" ItemsSource="{Binding Visible}" Background="Transparent" Margin="0,4,0,0"
+                     DoubleTapped="OnTrackDoubleTapped">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:TrackRowViewModel">
+                  <Border Classes="track" Classes.removed="{Binding IsRemoved}" Classes.unavailable="{Binding IsUnavailable}"
+                          Classes.untracked="{Binding IsUntracked}">
+                    <Border.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="Play" Command="{Binding PlayCommand}" />
+                        <MenuItem Header="Open folder" Command="{Binding OpenFolderCommand}" />
+                        <MenuItem Header="Copy video URL" Command="{Binding CopyUrlCommand}" />
+                        <Separator />
+                        <MenuItem Header="Delete local file…" Command="{Binding DeleteFileCommand}" />
+                      </ContextMenu>
+                    </Border.ContextMenu>
+                    <Grid ColumnDefinitions="26,Auto,*,Auto,Auto,Auto" RowDefinitions="Auto,Auto">
+                      <TextBlock Grid.RowSpan="2" Classes="status-icon" Text="{Binding StatusIcon}" ToolTip.Tip="{Binding StatusTip}"
+                                 Classes.ok="{Binding IsSynced}" Classes.failed="{Binding IsFailed}"
+                                 Classes.attention="{Binding IsRemoved}" Classes.missing="{Binding IsMissing}"
+                                 Classes.active="{Binding IsDownloading}" />
+                      <!-- The image covers the placeholder once it has loaded. -->
+                      <Border Grid.Column="1" Grid.RowSpan="2" Classes="cover small" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <Panel>
+                          <TextBlock Classes="cover-placeholder" Text="♪" />
+                          <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
+                                 RenderOptions.BitmapInterpolationMode="MediumQuality" />
+                        </Panel>
+                      </Border>
+                      <TextBlock Grid.Column="2" Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Grid.Column="2" Grid.Row="1" Classes="muted small" Text="{Binding Details}"
+                                 TextTrimming="CharacterEllipsis" IsVisible="{Binding !ShowError}" />
+                      <TextBlock Grid.Column="2" Grid.Row="1" Classes="error small" Text="{Binding Error}" TextWrapping="NoWrap"
+                                 TextTrimming="CharacterEllipsis" IsVisible="{Binding ShowError}" ToolTip.Tip="{Binding Error}" />
+
+                      <StackPanel Grid.Column="3" Grid.RowSpan="2" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0"
+                                  VerticalAlignment="Center" IsVisible="{Binding IsDownloading}">
+                        <ProgressBar Width="120" MinWidth="0" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                                     IsIndeterminate="{Binding IsProgressIndeterminate}" VerticalAlignment="Center" />
+                        <TextBlock Classes="muted small" Width="120" Text="{Binding ProgressText}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <Border Grid.Column="3" Grid.RowSpan="2" Classes="label" Margin="12,0,0,0" VerticalAlignment="Center"
+                              IsVisible="{Binding HasStatusLabel}" ToolTip.Tip="{Binding StatusTip}"
+                              Classes.removed="{Binding IsRemoved}" Classes.failed="{Binding IsFailed}">
+                        <TextBlock Text="{Binding StatusLabel}" />
+                      </Border>
+                      <Button Grid.Column="4" Grid.RowSpan="2" Classes="danger small" Margin="8,0,0,0" VerticalAlignment="Center"
+                              Content="Delete…" IsVisible="{Binding CanDelete}" Command="{Binding DeleteFileCommand}"
+                              ToolTip.Tip="Delete the local file" />
+                      <TextBlock Grid.Column="5" Grid.RowSpan="2" Classes="muted" Text="{Binding DurationText}" MinWidth="52"
+                                 TextAlignment="Right" VerticalAlignment="Center" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Panel>
+        </DockPanel>
+      </Panel>
     </Grid>
   </DockPanel>
 </Window>

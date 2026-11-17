@@ -15,20 +15,22 @@ public class SyncServiceTests : IDisposable
     private readonly ManifestStore _store = new();
     private readonly FakeSource _source = new();
     private readonly FakeDownloader _downloader = new();
+    private readonly FakeFinder _finder = new();
     private bool _ffmpegInstalled = true;
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     public void Dispose() => _dir.Dispose();
 
-    private SyncService Service()
+    private SyncService Service(PlaylistSync.Core.Covers.ICoverStore? covers = null, BrowserCookieCache? cookies = null)
     {
         var bin = Path.Combine(_dir.Path, "no-bin");
         var fake = Path.Combine(Path.GetTempPath(), "fake-path-dir");
         var executables = new HashSet<string> { Path.Combine(fake, "yt-dlp") };
         if (_ffmpegInstalled) executables.Add(Path.Combine(fake, "ffmpeg"));
         var locator = new ToolLocator(bin, OperatingSystem.IsWindows(), k => k == "PATH" ? fake : null, executables.Contains);
-        return new SyncService([_source], _store, _downloader, locator, TimeProvider.System, NullLogger<SyncService>.Instance);
+        return new SyncService([_source], _store, _downloader, locator, TimeProvider.System, NullLogger<SyncService>.Instance, covers,
+            cookies: cookies, replacements: _finder);
     }
 
     private PlaylistEntry Entry(DownloadOptions? overrides = null) =>
@@ -278,11 +280,13 @@ public class SyncServiceTests : IDisposable
     public async Task Uses_playlist_overrides_and_track_numbers()
     {
         _source.Playlist = Remote(Enumerable.Range(0, 120).Select(i => T("v" + i, i)).ToArray());
-        var overrides = new DownloadOptions { Format = AudioFormat.Opus };
+        var overrides = new DownloadOptions { Format = AudioFormat.Opus, Proxy = "http://ignored:1", Retries = 1 };
+        var settings = new AppSettings { Download = new DownloadOptions { Proxy = "socks5://global:1080", Retries = 7 } };
 
-        await Service().SyncAsync(Entry(overrides), new AppSettings(), ct: Ct);
+        await Service().SyncAsync(Entry(overrides), settings, ct: Ct);
 
-        Assert.All(_downloader.Calls, r => Assert.Same(overrides, r.Options));
+        // The playlist's own options, but the network settings always come from the global ones.
+        Assert.All(_downloader.Calls, r => Assert.Equal(overrides with { Proxy = "socks5://global:1080", Retries = 7 }, r.Options));
         var v41 = _downloader.Calls.Single(r => r.VideoId == "v41");
         Assert.Equal(42, v41.TrackNumber);
         Assert.Equal(3, v41.TrackNumberWidth);
@@ -335,15 +339,274 @@ public class SyncServiceTests : IDisposable
         while ((current = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, current) != current) { }
     }
 
+    [Fact]
+    public async Task Delete_removes_files_of_removed_tracks_and_forgets_them()
+    {
+        _source.Playlist = Remote(T("a", 0), T("b", 1));
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        _source.Playlist = Remote(T("a", 0));
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        var result = await Service().DeleteFilesAsync(Entry(), new AppSettings(), ["b"], Ct);
+
+        Assert.Equal(["b"], result.Deleted);
+        Assert.Empty(result.Failed);
+        Assert.False(File.Exists(_dir.File("b.mp3")));
+        Assert.True(File.Exists(_dir.File("a.mp3")));
+        var saved = (await SavedManifest())!;
+        Assert.False(saved.Tracks.ContainsKey("b"));
+        Assert.Equal(TrackStatus.Synced, saved.Tracks["a"].Status);
+    }
+
+    [Fact]
+    public async Task Delete_keeps_the_record_of_unavailable_tracks()
+    {
+        var manifest = new Manifest { PlaylistId = "PL1" };
+        manifest.Tracks["u"] = new TrackRecord { Title = "Gone", File = "u.mp3", Status = TrackStatus.Unavailable, RemoteIndex = 0 };
+        await _store.SaveAsync(_dir.Path, manifest, Ct);
+        await File.WriteAllTextAsync(_dir.File("u.mp3"), "audio", Ct);
+
+        var result = await Service().DeleteFilesAsync(Entry(), new AppSettings(), ["u"], Ct);
+
+        Assert.Equal(["u"], result.Deleted);
+        Assert.False(File.Exists(_dir.File("u.mp3")));
+        var record = (await SavedManifest())!.Tracks["u"];
+        Assert.Equal(TrackStatus.Unavailable, record.Status);
+        Assert.Null(record.File);
+    }
+
+    [Fact]
+    public async Task Delete_refuses_tracks_still_in_the_playlist_and_unknown_ids()
+    {
+        _source.Playlist = Remote(T("a", 0));
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        var result = await Service().DeleteFilesAsync(Entry(), new AppSettings(), ["a", "nope"], Ct);
+
+        Assert.Empty(result.Deleted);
+        Assert.Equal(["a", "nope"], result.Failed.Select(f => f.Id));
+        Assert.True(File.Exists(_dir.File("a.mp3")));
+    }
+
+    [Theory]
+    [InlineData("../outside.mp3")]
+    [InlineData(".playlist-sync.json")]
+    public async Task Delete_refuses_paths_outside_the_folder_or_our_own_files(string file)
+    {
+        var manifest = new Manifest { PlaylistId = "PL1" };
+        manifest.Tracks["x"] = new TrackRecord { File = file, Status = TrackStatus.RemovedRemote };
+        await _store.SaveAsync(_dir.Path, manifest, Ct);
+
+        var result = await Service().DeleteFilesAsync(Entry(), new AppSettings(), ["x"], Ct);
+
+        Assert.Empty(result.Deleted);
+        Assert.Single(result.Failed);
+        Assert.True(File.Exists(ManifestStore.PathFor(_dir.Path)));
+    }
+
+    [Fact]
+    public async Task Delete_of_an_already_missing_file_still_forgets_the_track()
+    {
+        var manifest = new Manifest { PlaylistId = "PL1" };
+        manifest.Tracks["r"] = new TrackRecord { File = "r.mp3", Status = TrackStatus.RemovedRemote };
+        await _store.SaveAsync(_dir.Path, manifest, Ct);
+
+        var result = await Service().DeleteFilesAsync(Entry(), new AppSettings(), ["r"], Ct);
+
+        Assert.Equal(["r"], result.Deleted);
+        Assert.Empty((await SavedManifest())!.Tracks);
+    }
+
+    [Fact]
+    public async Task Delete_is_refused_while_the_folder_is_syncing()
+    {
+        _source.Playlist = Remote(T("a", 0));
+        var entered = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        _downloader.Before = async (_, _) =>
+        {
+            entered.TrySetResult();
+            await release.Task;
+        };
+        var service = Service();
+
+        var sync = service.SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        var ex = await Assert.ThrowsAsync<SyncException>(() => service.DeleteFilesAsync(Entry(), new AppSettings(), ["a"], Ct));
+        Assert.Equal(SyncErrorKind.AlreadyRunning, ex.Kind);
+
+        release.SetResult();
+        await sync;
+    }
+
+    [Fact]
+    public async Task Delete_updates_the_m3u_when_enabled()
+    {
+        var manifest = new Manifest { PlaylistId = "PL1" };
+        manifest.Tracks["u"] = new TrackRecord { Title = "Gone", File = "u.mp3", Status = TrackStatus.Unavailable, RemoteIndex = 0 };
+        await _store.SaveAsync(_dir.Path, manifest, Ct);
+        await File.WriteAllTextAsync(_dir.File("u.mp3"), "audio", Ct);
+        var settings = new AppSettings { Download = new DownloadOptions { WriteM3u = true } };
+
+        await Service().DeleteFilesAsync(Entry(), settings, ["u"], Ct);
+
+        var m3u = await File.ReadAllTextAsync(_dir.File(M3uWriter.FileName(Entry().Name)), Ct);
+        Assert.DoesNotContain("u.mp3", m3u);
+    }
+
+    // ───── Folder cover ─────
+
+    private const string CustomCover = "https://i.ytimg.com/pl_c/PL1/studio_square_thumbnail.jpg";
+    private static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+
+    private RemotePlaylist RemoteWithCover(string coverUrl) =>
+        Remote(T("a", 0)) with { Thumbnails = [new RemoteThumbnail(coverUrl, 544, 544)] };
+
+    [Fact]
+    public async Task Saves_the_playlist_cover_into_the_folder_when_enabled()
+    {
+        _source.Playlist = RemoteWithCover(CustomCover);
+        var covers = new FakeCoverStore(_dir.File("cached.img"), Jpeg);
+
+        await Service(covers).SyncAsync(Entry(new DownloadOptions { SaveFolderCover = true }), new AppSettings(), ct: Ct);
+
+        Assert.Equal(Jpeg, await File.ReadAllBytesAsync(_dir.File("cover.jpg"), Ct));
+        Assert.Equal([CustomCover], covers.Requested);
+    }
+
+    [Fact]
+    public async Task Cover_is_off_by_default_and_never_overwrites_an_existing_one()
+    {
+        _source.Playlist = RemoteWithCover(CustomCover);
+        var covers = new FakeCoverStore(_dir.File("cached.img"), Jpeg);
+
+        await Service(covers).SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        Assert.False(File.Exists(_dir.File("cover.jpg")));
+
+        await File.WriteAllTextAsync(_dir.File("Folder.JPG"), "mine", Ct);
+        await Service(covers).SyncAsync(Entry(new DownloadOptions { SaveFolderCover = true }), new AppSettings(), ct: Ct);
+        Assert.False(File.Exists(_dir.File("cover.jpg")));
+        Assert.Equal("mine", await File.ReadAllTextAsync(_dir.File("Folder.JPG"), Ct));
+        Assert.Empty(covers.Requested);
+    }
+
+    [Fact]
+    public async Task A_video_thumbnail_fallback_is_not_saved_as_the_folder_cover()
+    {
+        _source.Playlist = RemoteWithCover("https://i.ytimg.com/vi/a/hqdefault.jpg");
+        var covers = new FakeCoverStore(_dir.File("cached.img"), Jpeg);
+
+        await Service(covers).SyncAsync(Entry(new DownloadOptions { SaveFolderCover = true }), new AppSettings(), ct: Ct);
+
+        Assert.False(File.Exists(_dir.File("cover.jpg")));
+        Assert.Empty(covers.Requested);
+    }
+
+    [Fact]
+    public async Task A_failed_cover_download_does_not_fail_the_sync()
+    {
+        _source.Playlist = RemoteWithCover(CustomCover);
+        var covers = new FakeCoverStore(null, null);
+
+        var result = await Service(covers).SyncAsync(Entry(new DownloadOptions { SaveFolderCover = true }), new AppSettings(), ct: Ct);
+
+        Assert.Equal(1, result.Downloaded);
+        Assert.False(File.Exists(_dir.File("cover.jpg")));
+    }
+
+    private sealed class FakeCoverStore(string? path, byte[]? content) : PlaylistSync.Core.Covers.ICoverStore
+    {
+        public List<string> Requested { get; } = [];
+
+        public async Task<string?> GetAsync(Guid playlistId, string url, CancellationToken ct = default)
+        {
+            Requested.Add(url);
+            if (path is null || content is null) return null;
+            await File.WriteAllBytesAsync(path, content, ct);
+            return path;
+        }
+    }
+
+    private static readonly AppSettings BraveSettings = new()
+    {
+        Download = new DownloadOptions { CookieMode = CookieMode.Browser, CookiesBrowser = "brave" },
+    };
+
+    private BrowserCookieCache CookieCache(FakeProcessRunner runner) =>
+        new(runner, _dir.File("cookie-cache"), TimeProvider.System, NullLogger<BrowserCookieCache>.Instance);
+
+    [Fact]
+    public async Task Browser_cookies_are_read_once_and_each_process_gets_its_own_file()
+    {
+        _source.Playlist = Remote(T("a", 0), T("b", 1), T("c", 2));
+        var runner = BrowserCookieCacheTests.ExportingRunner();
+        var seen = new System.Collections.Concurrent.ConcurrentBag<(string Path, bool Existed)>();
+        _downloader.Before = (r, _) =>
+        {
+            Assert.Equal(CookieMode.File, r.Options.CookieMode);
+            seen.Add((r.Options.CookiesFile!, File.Exists(r.Options.CookiesFile)));
+            return Task.CompletedTask;
+        };
+        var events = new EventSink();
+        var service = Service(cookies: CookieCache(runner));
+
+        var result = await service.SyncAsync(Entry(), BraveSettings, events, ct: Ct);
+        await service.SyncAsync(Entry(), BraveSettings, ct: Ct); // reuses the snapshot
+
+        Assert.Equal(3, result.Downloaded);
+        Assert.Single(runner.Requests);
+        Assert.Equal(SyncStage.ReadingCookies, events.Of<SyncStageChanged>().First().Stage);
+        Assert.Equal(CookieMode.File, _source.LastContext!.Options.CookieMode);
+        Assert.True(_source.CookieFileExisted);
+        Assert.Equal(3, seen.Count);
+        Assert.All(seen, s => Assert.True(s.Existed));
+        Assert.Equal(3, seen.Select(s => s.Path).Distinct().Count());
+        // Every copy is deleted once its process is done.
+        Assert.Empty(Directory.EnumerateFiles(_dir.File("cookie-cache")));
+    }
+
+    [Fact]
+    public async Task Sign_in_errors_drop_the_cached_cookies()
+    {
+        _source.Playlist = Remote(T("a", 0));
+        var runner = BrowserCookieCacheTests.ExportingRunner();
+        _downloader.Respond = _ => DownloadResult.Failure(DownloadErrorKind.NeedsCookies, "Sign in to confirm you're not a bot");
+        var service = Service(cookies: CookieCache(runner));
+
+        await service.SyncAsync(Entry(), BraveSettings, ct: Ct);
+        await service.SyncAsync(Entry(), BraveSettings, ct: Ct);
+
+        Assert.Equal(2, runner.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Failed_cookie_export_falls_back_to_reading_the_browser_per_process()
+    {
+        _source.Playlist = Remote(T("a", 0));
+        var runner = new FakeProcessRunner(_ => FakeProcessRunner.Fail("ERROR: keyring locked"));
+
+        await Service(cookies: CookieCache(runner)).SyncAsync(Entry(), BraveSettings, ct: Ct);
+
+        Assert.Equal(CookieMode.Browser, _downloader.Calls.Single().Options.CookieMode);
+        Assert.Equal(CookieMode.Browser, _source.LastContext!.Options.CookieMode);
+    }
+
     private sealed class FakeSource : IPlaylistSource
     {
         public RemotePlaylist? Playlist { get; set; }
         public PlaylistFetchException? Error { get; set; }
+        public SourceContext? LastContext { get; private set; }
+        public bool CookieFileExisted { get; private set; }
 
         public bool CanHandle(string url) => true;
 
-        public Task<RemotePlaylist> FetchAsync(string url, SourceContext context, CancellationToken ct = default) =>
-            Error is not null ? Task.FromException<RemotePlaylist>(Error) : Task.FromResult(Playlist!);
+        public Task<RemotePlaylist> FetchAsync(string url, SourceContext context, CancellationToken ct = default)
+        {
+            LastContext = context;
+            CookieFileExisted = context.Options.CookiesFile is { } f && File.Exists(f);
+            return Error is not null ? Task.FromException<RemotePlaylist>(Error) : Task.FromResult(Playlist!);
+        }
     }
 
     /// <summary>Writes <c>&lt;id&gt;.mp3</c> into the target folder unless <see cref="Respond"/> returns a result.</summary>
@@ -370,6 +633,149 @@ public class SyncServiceTests : IDisposable
             var file = request.VideoId + ".mp3";
             await File.WriteAllTextAsync(Path.Combine(request.TargetDirectory, file), "audio", ct);
             return DownloadResult.Success(file);
+        }
+    }
+
+    // ---- replacements for gone videos --------------------------------------------------------
+
+    private void OriginalIsGone(string id = "gone") =>
+        _downloader.Respond = r => r.VideoId == id && r.SourceVideoId is null
+            ? DownloadResult.Failure(DownloadErrorKind.Unavailable, "Video unavailable. This video is not available")
+            : null;
+
+    [Fact]
+    public async Task Gone_video_is_downloaded_from_a_matching_replacement()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        OriginalIsGone();
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Found, new Replacement("new", "Title gone", "Artist", 180));
+        var events = new EventSink();
+
+        var result = await Service().SyncAsync(Entry(), new AppSettings(), events, ct: Ct);
+
+        Assert.Equal((1, 0, 0), (result.Downloaded, result.Failed, result.BecameUnavailable));
+        var query = Assert.Single(_finder.Calls);
+        Assert.Equal(new ReplacementQuery("gone", "Title gone", "Artist", 180), query);
+        Assert.Equal("new", _downloader.Calls[^1].SourceVideoId);
+        Assert.Equal("gone", _downloader.Calls[^1].VideoId);
+
+        var saved = (await SavedManifest())!.Tracks["gone"];
+        Assert.Equal(TrackStatus.Synced, saved.Status);
+        Assert.Equal("new", saved.ReplacementId);
+        Assert.Null(saved.LastError);
+        Assert.Contains(events.Of<TrackProgress>(), e => e.Progress.Phase == DownloadPhase.SearchingReplacement);
+    }
+
+    [Fact]
+    public async Task Known_replacement_is_reused_without_searching()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        OriginalIsGone();
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Found, new Replacement("new", "T", "A", 180));
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        File.Delete(_dir.File("gone.mp3"));
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        Assert.Single(_finder.Calls);
+        Assert.Equal(TrackStatus.Synced, (await SavedManifest())!.Tracks["gone"].Status);
+        Assert.Equal("new", _downloader.Calls[^1].SourceVideoId);
+    }
+
+    [Fact]
+    public async Task Without_a_match_the_track_stays_unavailable_and_is_not_searched_again_soon()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        OriginalIsGone();
+
+        var result = await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        Assert.Equal(1, result.BecameUnavailable);
+        var saved = (await SavedManifest())!.Tracks["gone"];
+        Assert.Equal(TrackStatus.Unavailable, saved.Status);
+        Assert.Null(saved.ReplacementId);
+        Assert.NotNull(saved.ReplacementSearchedAt);
+        Assert.Contains("No matching upload", saved.LastError);
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        Assert.Single(_finder.Calls);
+        Assert.Equal(TrackStatus.Unavailable, (await SavedManifest())!.Tracks["gone"].Status);
+    }
+
+    [Fact]
+    public async Task Failed_search_is_retried_on_the_next_sync()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        OriginalIsGone();
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Error, Error: "bot check");
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        Assert.Null((await SavedManifest())!.Tracks["gone"].ReplacementSearchedAt);
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+        Assert.Equal(2, _finder.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Replacements_can_be_turned_off()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        OriginalIsGone();
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Found, new Replacement("new", "T", "A", 180));
+        var settings = new AppSettings { Download = new DownloadOptions { FindReplacements = false } };
+
+        await Service().SyncAsync(Entry(), settings, ct: Ct);
+
+        Assert.Empty(_finder.Calls);
+        Assert.Equal(TrackStatus.Unavailable, (await SavedManifest())!.Tracks["gone"].Status);
+    }
+
+    [Fact]
+    public async Task Only_gone_videos_are_replaced()
+    {
+        _source.Playlist = Remote(T("bad", 0), T("unknown-length", 1) with { DurationSec = null });
+        _downloader.Respond = r => r.VideoId switch
+        {
+            "bad" => DownloadResult.Failure(DownloadErrorKind.Other, "HTTP Error 403"),
+            _ => DownloadResult.Failure(DownloadErrorKind.Unavailable, "Video unavailable"),
+        };
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        // A failure is retried as is; a gone track without a known length can't be matched.
+        Assert.Empty(_finder.Calls);
+    }
+
+    [Fact]
+    public async Task Gone_replacement_is_forgotten_so_the_next_sync_searches_again()
+    {
+        _source.Playlist = Remote(T("gone", 0));
+        _downloader.Respond = _ => DownloadResult.Failure(DownloadErrorKind.Unavailable, "Video unavailable");
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Found, new Replacement("new", "T", "A", 180));
+
+        await Service().SyncAsync(Entry(), new AppSettings(), ct: Ct);
+
+        var saved = (await SavedManifest())!.Tracks["gone"];
+        Assert.Equal(TrackStatus.Unavailable, saved.Status);
+        Assert.Null(saved.ReplacementId);
+        Assert.Contains("Replacement new: Video unavailable", saved.LastError);
+    }
+
+    private sealed class FakeFinder : IReplacementFinder
+    {
+        private readonly List<ReplacementQuery> _calls = [];
+
+        public IReadOnlyList<ReplacementQuery> Calls
+        {
+            get { lock (_calls) return _calls.ToList(); }
+        }
+
+        public Func<ReplacementQuery, ReplacementResult> Respond { get; set; } = _ => ReplacementResult.NotFound;
+
+        public Task<ReplacementResult> FindAsync(ReplacementQuery query, DownloadOptions options, DownloadTools tools, CancellationToken ct)
+        {
+            lock (_calls) _calls.Add(query);
+            return Task.FromResult(Respond(query));
         }
     }
 

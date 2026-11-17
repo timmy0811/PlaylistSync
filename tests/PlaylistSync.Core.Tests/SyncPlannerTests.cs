@@ -296,6 +296,30 @@ public class SyncPlannerTests
         Assert.Empty(plan.ToDownload);
     }
 
+    [Fact]
+    public void Gone_track_with_a_replacement_file_stays_synced()
+    {
+        var record = Rec(TrackStatus.Synced, "a.mp3");
+        record.ReplacementId = "new";
+        var plan = Plan(Remote(T("a", unavailable: "deleted video", title: "[Deleted video]")), M(("a", record)), Disk("a.mp3"));
+
+        Assert.Equal(TrackStatus.Synced, plan.Manifest.Tracks["a"].Status);
+        Assert.Equal("new", plan.Manifest.Tracks["a"].ReplacementId);
+        Assert.Empty(plan.ToDownload);
+        Assert.Empty(plan.Changes);
+    }
+
+    [Fact]
+    public void Gone_track_whose_replacement_file_was_deleted_is_unavailable()
+    {
+        var record = Rec(TrackStatus.Synced, "a.mp3");
+        record.ReplacementId = "new";
+        var plan = Plan(Remote(T("a", unavailable: "deleted video", title: "[Deleted video]")), M(("a", record)));
+
+        Assert.Equal(TrackStatus.Unavailable, plan.Manifest.Tracks["a"].Status);
+        Assert.Empty(plan.ToDownload);
+    }
+
     // ---- duplicates, purity, playlist identity ---------------------------------------------
 
     [Fact]
@@ -438,9 +462,100 @@ public class SyncPlannerTests
 
     // ---- helpers ---------------------------------------------------------------------------
 
+    [Fact]
+    public void Stores_the_cover_and_keeps_it_when_the_remote_has_none()
+    {
+        const string cover = "https://i.ytimg.com/pl_c/PL1/studio_square_thumbnail.jpg?sqp=x";
+        var remote = Remote(T("a")) with { Thumbnails = [new RemoteThumbnail(cover, 720, 720)] };
+        var first = Plan(remote, null);
+        Assert.Equal(cover, first.Manifest.CoverUrl);
+
+        var second = Plan(Remote(T("a")), first.Manifest);
+        Assert.Equal(cover, second.Manifest.CoverUrl);
+    }
+
+    // ---- same song under different ids -----------------------------------------------------
+
+    private static RemoteTrack Song(string id, string title = "Song", string uploader = "Artist", double duration = 200) =>
+        new(id, title, uploader, duration, -1);
+
+    [Fact]
+    public void Duplicate_song_is_downloaded_once()
+    {
+        var plan = Plan(Remote(Song("a"), T("x"), Song("b", "Artist - Song (Official Video)", "ArtistVEVO", 201)), null,
+            skipDuplicates: true);
+
+        Assert.Equal(["a", "x"], plan.ToDownload);
+        var b = plan.Manifest.Tracks["b"];
+        Assert.Equal(TrackStatus.Duplicate, b.Status);
+        Assert.Equal("a", b.DuplicateOf);
+        Assert.Contains(new TrackChange("b", "Artist - Song (Official Video)", null, TrackStatus.Duplicate), plan.Changes);
+    }
+
+    [Fact]
+    public void Duplicates_are_downloaded_when_the_setting_is_off()
+    {
+        var plan = Plan(Remote(Song("a"), Song("b")), null, skipDuplicates: false);
+        Assert.Equal(["a", "b"], plan.ToDownload);
+    }
+
+    [Fact]
+    public void Already_downloaded_song_is_not_downloaded_again_under_a_new_id()
+    {
+        var old = Rec(TrackStatus.Synced, "Song.mp3", title: "Song", index: 1);
+        old.Uploader = "Artist - Topic";
+        old.DurationSec = 200;
+        var plan = Plan(Remote(Song("new"), Song("old", uploader: "Artist - Topic")), M(("old", old)), Disk("Song.mp3"),
+            skipDuplicates: true);
+
+        Assert.Empty(plan.ToDownload);
+        Assert.Equal(TrackStatus.Synced, plan.Manifest.Tracks["old"].Status);
+        Assert.Equal("old", plan.Manifest.Tracks["new"].DuplicateOf);
+    }
+
+    [Fact]
+    public void Song_removed_remotely_but_still_on_disk_counts_as_downloaded()
+    {
+        var old = Rec(TrackStatus.Synced, "Song.mp3", title: "Song");
+        old.Uploader = "Artist";
+        old.DurationSec = 200;
+        var plan = Plan(Remote(Song("reupload")), M(("old", old)), Disk("Song.mp3"), skipDuplicates: true);
+
+        Assert.Empty(plan.ToDownload);
+        Assert.Equal(TrackStatus.RemovedRemote, plan.Manifest.Tracks["old"].Status);
+        Assert.Equal(TrackStatus.Duplicate, plan.Manifest.Tracks["reupload"].Status);
+    }
+
+    [Fact]
+    public void Duplicate_is_downloaded_once_the_original_leaves_the_playlist()
+    {
+        var dup = Rec(TrackStatus.Duplicate, null, title: "Song", index: 1);
+        dup.Uploader = "Artist";
+        dup.DurationSec = 200;
+        dup.DuplicateOf = "a";
+        var a = Rec(TrackStatus.Pending, null, title: "Song");
+        a.Uploader = "Artist";
+        a.DurationSec = 200;
+
+        var plan = Plan(Remote(Song("b")), M(("a", a), ("b", dup)), skipDuplicates: true);
+
+        Assert.Equal(["b"], plan.ToDownload);
+        Assert.Equal(TrackStatus.Pending, plan.Manifest.Tracks["b"].Status);
+        Assert.Null(plan.Manifest.Tracks["b"].DuplicateOf);
+        Assert.False(plan.Manifest.Tracks.ContainsKey("a"));
+    }
+
+    [Fact]
+    public void Unavailable_entry_is_not_an_original()
+    {
+        var plan = Plan(Remote(new RemoteTrack("gone", "Song", "Artist", 200, -1, "private video"), Song("b")), null,
+            skipDuplicates: true);
+        Assert.Equal(["b"], plan.ToDownload);
+    }
+
     private static SyncPlan Plan(RemotePlaylist remote, Manifest? manifest, DiskSnapshot? disk = null,
-        bool redownloadMissing = true) =>
-        SyncPlanner.Plan(remote, manifest, disk ?? Disk(), Url, redownloadMissing, Now);
+        bool redownloadMissing = true, bool skipDuplicates = false) =>
+        SyncPlanner.Plan(remote, manifest, disk ?? Disk(), Url, redownloadMissing, Now, skipDuplicates);
 
     /// <summary>Tracks built with <see cref="T"/> get their position from the argument order.</summary>
     private static RemotePlaylist Remote(params RemoteTrack[] tracks) =>

@@ -22,6 +22,9 @@
           <SolidColorBrush x:Key="ErrorBrush" Color="#FF6B81" />
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
+      <!-- Vector icons (Material Icons, Apache 2.0): emoji glyphs depend on font fallback and render inconsistently. -->
+      <StreamGeometry x:Key="SettingsIcon">M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z</StreamGeometry>
+      <StreamGeometry x:Key="ToolboxIcon">M18 16h-2v-1H8v1H6v-1H2v5h20v-5h-4zm2-8h-3V6c0-1.1-.9-2-2-2H9c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v4h4v-2h2v2h8v-2h2v2h4v-4c0-1.1-.9-2-2-2zm-5 0H9V6h6v2z</StreamGeometry>
     </ResourceDictionary>
   </Styles.Resources>
 
@@ -31,6 +34,37 @@
   <Style Selector="TextBlock.h1">
     <Setter Property="FontSize" Value="20" />
     <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <Style Selector="TextBlock.h2">
+    <Setter Property="FontSize" Value="15" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Settings pages -->
+  <Style Selector="StackPanel.page">
+    <Setter Property="Margin" Value="24,8,24,24" />
+    <Setter Property="Spacing" Value="14" />
+    <Setter Property="MaxWidth" Value="640" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style Selector="StackPanel.field">
+    <Setter Property="Spacing" Value="6" />
+  </Style>
+  <Style Selector="SelectableTextBlock.hint">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="SelectableTextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+  </Style>
+  <Style Selector="SelectableTextBlock.warning">
+    <Setter Property="Foreground" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+  <Style Selector="SelectableTextBlock.error">
+    <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+  <Style Selector="SelectableTextBlock.ok">
+    <Setter Property="Foreground" Value="{DynamicResource SystemControlForegroundBaseHighBrush}" />
   </Style>
 
   <Style Selector="TextBlock.error">
@@ -65,6 +99,54 @@
     <Setter Property="StrokeThickness" Value="0" />
   </Style>
 
+  <!-- Status dot drawn on the corner of the sidebar cover -->
+  <Style Selector="Ellipse.dot.badge">
+    <Setter Property="Width" Value="11" />
+    <Setter Property="Height" Value="11" />
+    <Setter Property="Fill" Value="{DynamicResource SidebarBrush}" />
+  </Style>
+  <Style Selector="Ellipse.dot.badge.ok, Ellipse.dot.badge.attention, Ellipse.dot.badge.error">
+    <Setter Property="Stroke" Value="{DynamicResource SidebarBrush}" />
+    <Setter Property="StrokeThickness" Value="2" />
+  </Style>
+  <!-- Repeated here: the badge's own Fill above would otherwise win over the status colours. -->
+  <Style Selector="Ellipse.dot.badge.ok">
+    <Setter Property="Fill" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+  </Style>
+  <Style Selector="Ellipse.dot.badge.attention">
+    <Setter Property="Fill" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+  <Style Selector="Ellipse.dot.badge.error">
+    <Setter Property="Fill" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+
+  <!-- Playlist cover (image or placeholder) -->
+  <Style Selector="Border.cover">
+    <Setter Property="ClipToBounds" Value="True" />
+    <Setter Property="Background" Value="{DynamicResource DividerBrush}" />
+  </Style>
+  <Style Selector="Border.cover.small">
+    <Setter Property="Width" Value="34" />
+    <Setter Property="Height" Value="34" />
+    <Setter Property="CornerRadius" Value="4" />
+  </Style>
+  <Style Selector="Border.cover.large">
+    <Setter Property="Width" Value="96" />
+    <Setter Property="Height" Value="96" />
+    <Setter Property="CornerRadius" Value="6" />
+  </Style>
+  <Style Selector="TextBlock.cover-placeholder">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+  </Style>
+  <Style Selector="Border.cover.small TextBlock.cover-placeholder">
+    <Setter Property="FontSize" Value="15" />
+  </Style>
+  <Style Selector="Border.cover.large TextBlock.cover-placeholder">
+    <Setter Property="FontSize" Value="36" />
+  </Style>
+
   <!-- Flat link-like button (folder path in the header) -->
   <Style Selector="Button.link">
     <Setter Property="Background" Value="Transparent" />
@@ -80,6 +162,100 @@
   </Style>
 
   <Style Selector="Button.danger">
+    <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+  <Style Selector="Button.small">
+    <Setter Property="Padding" Value="10,3" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <!-- Square icon-only button, same height as the small text buttons next to it -->
+  <Style Selector="Button.icon">
+    <Setter Property="Padding" Value="7,5" />
+    <Setter Property="VerticalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="Button.icon PathIcon">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="14" />
+  </Style>
+  <Style Selector="TextBlock.small">
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+  <Style Selector="TextBlock.syncing">
+    <Setter Property="Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+  </Style>
+
+  <!-- Filter chips -->
+  <Style Selector="ListBox.chips">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="SelectionMode" Value="AlwaysSelected" />
+  </Style>
+  <Style Selector="ListBox.chips ListBoxItem">
+    <Setter Property="Padding" Value="10,3" />
+    <Setter Property="Margin" Value="0,0,6,4" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <!-- Track rows -->
+  <Style Selector="ListBox.tracks ListBoxItem">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,1" />
+    <Setter Property="MinHeight" Value="0" />
+  </Style>
+  <Style Selector="Border.track">
+    <Setter Property="Padding" Value="8,5" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+  <Style Selector="Border.track.removed">
+    <Setter Property="Background" Value="{DynamicResource RemovedRowBrush}" />
+  </Style>
+  <Style Selector="Border.track.unavailable">
+    <Setter Property="Background" Value="{DynamicResource UnavailableRowBrush}" />
+  </Style>
+
+  <Style Selector="TextBlock.status-icon">
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.status-icon.ok">
+    <Setter Property="Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+  </Style>
+  <Style Selector="TextBlock.status-icon.active">
+    <Setter Property="Foreground" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+  </Style>
+  <Style Selector="TextBlock.status-icon.failed">
+    <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+  <Style Selector="TextBlock.status-icon.attention, TextBlock.status-icon.missing">
+    <Setter Property="Foreground" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+
+  <!-- Status label next to a track -->
+  <Style Selector="Border.label">
+    <Setter Property="Padding" Value="8,1" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="BorderBrush" Value="{DynamicResource DividerBrush}" />
+  </Style>
+  <Style Selector="Border.label TextBlock">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource MutedTextBrush}" />
+  </Style>
+  <Style Selector="Border.label.removed">
+    <Setter Property="BorderBrush" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+  <Style Selector="Border.label.removed TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource AttentionBrush}" />
+  </Style>
+  <Style Selector="Border.label.failed">
+    <Setter Property="BorderBrush" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+  <Style Selector="Border.label.failed TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
   </Style>
 </Styles>

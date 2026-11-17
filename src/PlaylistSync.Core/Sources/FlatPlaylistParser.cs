@@ -84,8 +84,23 @@ internal static class FlatPlaylistParser
                 String(root, "channel") ?? String(root, "uploader"),
                 String(root, "webpage_url"),
                 tracks,
-                reported is { } r ? (int)r : null);
+                reported is { } r ? (int)r : null)
+            {
+                Thumbnails = Thumbnails(root),
+            };
         }
+    }
+
+    private static List<RemoteThumbnail> Thumbnails(JsonElement root)
+    {
+        var list = new List<RemoteThumbnail>();
+        if (!root.TryGetProperty("thumbnails", out var thumbs) || thumbs.ValueKind != JsonValueKind.Array) return list;
+        foreach (var t in thumbs.EnumerateArray())
+        {
+            if (t.ValueKind != JsonValueKind.Object || String(t, "url") is not { Length: > 0 } url) continue;
+            list.Add(new RemoteThumbnail(url, Number(t, "width") is { } w ? (int)w : null, Number(t, "height") is { } h ? (int)h : null));
+        }
+        return list;
     }
 
     private static string? UnavailableReason(JsonElement e, string? title)
@@ -93,6 +108,10 @@ internal static class FlatPlaylistParser
         if (title is not null && UnavailableTitles.TryGetValue(title.Trim(), out var reason)) return reason;
         if (String(e, "availability") == "private") return "private video";
         if (String(e, "live_status") == "is_upcoming") return "not released yet";
+        // Without a signed-in session, YouTube Music lists deleted videos with nothing but their id (signed in, they
+        // read "[Deleted video]"). Real entries always carry a title.
+        if (title is null && Number(e, "duration") is null && String(e, "channel") is null && String(e, "uploader") is null)
+            return "deleted video";
         return null;
     }
 

@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using PlaylistSync.App.Services;
+using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Playlists;
 using PlaylistSync.Core.Sources;
@@ -21,14 +22,18 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
 
     private readonly IEnumerable<IPlaylistSource> _sources;
     private readonly ManifestStore _manifests;
+    private readonly FolderResolver _folders;
     private readonly IDialogService _dialogs;
     private readonly ILogger _log;
     private readonly SourceContext _sourceContext;
     private readonly IReadOnlyList<PlaylistEntry> _others;
     private readonly PlaylistEntry? _original;
     private readonly Func<PlaylistEntry, Task> _save;
+    private readonly Func<string, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? _createSettings;
+    private readonly AppSettings _settings;
     private readonly string _home;
-    private readonly string _musicDir;
+    /// <summary>Where new playlist folders are suggested: the default folder from the settings, or Music.</summary>
+    private readonly string _baseDir;
 
     private CancellationTokenSource? _urlCheck;
     private CancellationTokenSource? _folderCheck;
@@ -40,24 +45,29 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
     public PlaylistEditorViewModel(
         IEnumerable<IPlaylistSource> sources,
         ManifestStore manifests,
+        FolderResolver folders,
         IDialogService dialogs,
         ILogger logger,
         AppSettings settings,
         IReadOnlyList<PlaylistEntry> library,
         PlaylistEntry? original,
-        Func<PlaylistEntry, Task> save)
+        Func<PlaylistEntry, Task> save,
+        Func<string, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? createSettings = null)
     {
+        _createSettings = createSettings;
+        _settings = settings;
+        _overrides = original?.Overrides;
         _sources = sources;
         _manifests = manifests;
+        _folders = folders;
         _dialogs = dialogs;
         _log = logger;
-        _sourceContext = new SourceContext(settings.Tools, original?.Overrides ?? settings.Download);
+        _sourceContext = new SourceContext(settings.Tools, settings.Download);
         _others = library;
         _original = original;
         _save = save;
-        _home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var music = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-        _musicDir = string.IsNullOrEmpty(music) ? Path.Combine(_home, "Music") : music;
+        _home = PathUtil.Home;
+        _baseDir = PathUtil.BaseDirectory(settings.DefaultDirectory, _home, PathUtil.MusicDir);
 
         if (original is not null)
         {
@@ -74,6 +84,15 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
     public string SaveText => IsEditing ? "Save" : "Add";
 
     [ObservableProperty] private string _name = "";
+
+    /// <summary>The playlist's own download options; null = the global ones. Saved together with the entry.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(SettingsText))] private DownloadOptions? _overrides;
+
+    public string SettingsText => Overrides is { } o
+        ? "Own settings: " + DownloadOptionsViewModel.Describe(o)
+        : "Global settings (" + DownloadOptionsViewModel.Describe(_settings.Download) + ")";
+
+    public bool CanEditSettings => _createSettings is not null;
     [ObservableProperty] private string _url = "";
     [ObservableProperty] private string _directory = "";
 
@@ -122,10 +141,25 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
     private async Task BrowseAsync()
     {
         var start = PathUtil.NormalizeUserPath(Directory, _home);
+        if (FolderResolver.IsRemote(start)) start = null; // the picker needs a local start folder
         while (start is not null && !System.IO.Directory.Exists(start))
             start = Path.GetDirectoryName(start);
-        var picked = await _dialogs.PickFolderAsync("Choose the folder for this playlist", start ?? _musicDir);
+        var picked = await _dialogs.PickFolderAsync("Choose the folder for this playlist", start ?? _baseDir);
         if (picked is not null) Directory = picked;
+    }
+
+    [RelayCommand]
+    private async Task EditSettingsAsync()
+    {
+        if (_createSettings is null) return;
+        var title = string.IsNullOrWhiteSpace(Name) ? "new playlist" : Name.Trim();
+        // Kept in the dialog until it is saved; Cancel here discards it again.
+        var vm = _createSettings(title, Overrides, o =>
+        {
+            Overrides = o;
+            return Task.CompletedTask;
+        });
+        await _dialogs.ShowSettingsAsync(vm);
     }
 
     [RelayCommand]
@@ -148,6 +182,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
             Name = Name.Trim(),
             Url = Url.Trim(),
             Directory = v.NormalizedDirectory!,
+            Overrides = Overrides,
         };
 
         IsSaving = true;
@@ -253,7 +288,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         }
         if (!IsEditing && (string.IsNullOrWhiteSpace(Directory) || Directory == _autoDirectory))
         {
-            _autoDirectory = UniqueFolder(Path.Combine(_musicDir, PathUtil.SafeFolderName(title)));
+            _autoDirectory = UniqueFolder(Path.Combine(_baseDir, PathUtil.SafeFolderName(title)));
             Directory = _autoDirectory;
         }
     }
@@ -288,10 +323,29 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         {
             if (!immediately) await Task.Delay(FolderDebounce, cts.Token);
             var playlistId = _fetchedPlaylistId ?? YouTubeUrl.PlaylistId(Url);
-            var info = await Task.Run(() => FolderInspector.InspectAsync(dir, playlistId, _manifests, cts.Token), cts.Token);
+            var remote = FolderResolver.IsRemote(dir);
+            if (remote) FolderText = "Connecting to the network folder…";
+            FolderInfo info;
+            try
+            {
+                info = await Task.Run(async () =>
+                {
+                    var local = (await _folders.ResolveAsync(dir, cts.Token).ConfigureAwait(false)).Path;
+                    return await FolderInspector.InspectAsync(local, playlistId, _manifests, cts.Token).ConfigureAwait(false);
+                }, cts.Token);
+            }
+            catch (FolderUnavailableException ex)
+            {
+                // Not an error that blocks saving: the server may just be off right now.
+                if (cts.IsCancellationRequested) return;
+                FolderText = ex.Message + " You can still save; the folder is checked again when syncing.";
+                FolderWarning = true;
+                return;
+            }
             if (cts.IsCancellationRequested) return;
 
             var text = info.Message;
+            if (remote) text = "Network folder. " + text;
             if (IsEditing && !string.Equals(dir, _original!.Directory, StringComparison.Ordinal))
                 text += " The old folder and its files stay where they are.";
             FolderText = text;

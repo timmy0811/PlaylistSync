@@ -17,6 +17,9 @@ public sealed record RemoteTrack(
     public bool IsAvailable => UnavailableReason is null;
 }
 
+/// <summary>A playlist image offered by the site. Sizes are null when unknown.</summary>
+public sealed record RemoteThumbnail(string Url, int? Width, int? Height);
+
 /// <param name="Id">Remote playlist id, e.g. <c>PL…</c>.</param>
 /// <param name="ReportedCount">Entry count the site reported, if any (may differ from <see cref="Tracks"/>).</param>
 public sealed record RemotePlaylist(
@@ -25,7 +28,11 @@ public sealed record RemotePlaylist(
     string? Uploader,
     string? WebpageUrl,
     IReadOnlyList<RemoteTrack> Tracks,
-    int? ReportedCount = null);
+    int? ReportedCount = null)
+{
+    /// <summary>Playlist images (the user's custom cover, or YouTube's fallback from the first video).</summary>
+    public IReadOnlyList<RemoteThumbnail> Thumbnails { get; init; } = [];
+}
 
 /// <summary>What a source needs from the settings to fetch a playlist.</summary>
 public sealed record SourceContext(ToolSettings Tools, DownloadOptions Options);

@@ -4,8 +4,11 @@ using Microsoft.Extensions.Logging;
 using PlaylistSync.App.Services;
 using PlaylistSync.App.ViewModels;
 using PlaylistSync.Core;
+using PlaylistSync.Core.Covers;
 using PlaylistSync.Core.Download;
+using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Logging;
+using PlaylistSync.Core.Playback;
 using PlaylistSync.Core.Playlists;
 using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Storage;
@@ -49,13 +52,16 @@ internal static class Program
     {
         var sc = new ServiceCollection();
         sc.AddSingleton(paths);
+        // Information until settings.json is read; then the level from the settings (changeable at runtime).
+        var logLevel = new LogLevelSwitch();
+        sc.AddSingleton(logLevel);
         sc.AddLogging(b =>
         {
-            b.SetMinimumLevel(LogLevel.Information);
+            b.SetMinimumLevel(LogLevel.Trace);
+            b.AddFilter((_, _, level) => logLevel.IsEnabled(level));
             b.AddProvider(new FileLoggerProvider(paths.LogDir));
 #if DEBUG
             b.AddConsole();
-            b.SetMinimumLevel(LogLevel.Debug);
 #endif
         });
         sc.AddSingleton<ConfigStore>();
@@ -66,10 +72,36 @@ internal static class Program
         sc.AddSingleton<IPlaylistSource, YtDlpPlaylistSource>();
         sc.AddSingleton(TimeProvider.System);
         sc.AddSingleton<ITrackDownloader, YtDlpTrackDownloader>();
+        sc.AddSingleton<IReplacementFinder, YtDlpReplacementFinder>();
+        sc.AddSingleton(sp => new FolderResolver(
+            sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<ILogger<FolderResolver>>(),
+            Path.Combine(paths.DataDir, "downloads")));
+        sc.AddSingleton(sp => new BrowserCookieCache(
+            sp.GetRequiredService<IProcessRunner>(),
+            BrowserCookieCache.DefaultDirectory(paths, Environment.GetEnvironmentVariable),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<BrowserCookieCache>>()));
         sc.AddSingleton<SyncService>();
+        sc.AddSingleton<SingleDownloader>();
+        sc.AddSingleton(sp => new CoverCache(
+            paths,
+            new HttpClient { Timeout = TimeSpan.FromSeconds(30) },
+            sp.GetRequiredService<ILogger<CoverCache>>()));
+        sc.AddSingleton<ICoverStore>(sp => sp.GetRequiredService<CoverCache>());
+        sc.AddSingleton<CoverLoader>();
+        sc.AddSingleton(sp => new TrackThumbnails(
+            paths,
+            sp.GetRequiredService<IProcessRunner>(),
+            sp.GetRequiredService<ILogger<TrackThumbnails>>(),
+            new HttpClient { Timeout = TimeSpan.FromSeconds(30) }));
+        sc.AddSingleton<ITrackThumbnails>(sp => sp.GetRequiredService<TrackThumbnails>());
+        sc.AddSingleton<ThumbnailLoader>();
+        sc.AddSingleton<PlayerLauncher>();
         sc.AddSingleton<PlaylistLibrary>();
         sc.AddSingleton<SettingsService>();
         sc.AddSingleton<IDialogService, DialogService>();
+        sc.AddSingleton<ToolboxViewModel>();
         sc.AddSingleton<MainWindowViewModel>();
         return sc.BuildServiceProvider();
     }

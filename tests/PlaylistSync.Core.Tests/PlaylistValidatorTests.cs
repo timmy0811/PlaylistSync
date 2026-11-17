@@ -140,3 +140,29 @@ public sealed class SafeFolderNameTests
     [Fact]
     public void Long_names_are_truncated() => Assert.Equal(100, PathUtil.SafeFolderName(new string('a', 300)).Length);
 }
+
+public sealed class BaseDirectoryTests
+{
+    private static readonly string Root = Path.GetPathRoot(Path.GetTempPath())!;
+    private static readonly string Home = Path.Combine(Root, "home", "me");
+    private static readonly string Music = Path.Combine(Home, "Music");
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("relative/dir")]
+    public void Falls_back_to_music(string? configured) =>
+        Assert.Equal(Music, PathUtil.BaseDirectory(configured, Home, Music));
+
+    [Fact]
+    public void Uses_configured_folder()
+    {
+        var music = Path.Combine(Root, "data", "music");
+        Assert.Equal(music, PathUtil.BaseDirectory(music + Path.DirectorySeparatorChar, Home, Music));
+    }
+
+    [Fact]
+    public void Expands_tilde() =>
+        Assert.Equal(Path.Combine(Home, "Songs"), PathUtil.BaseDirectory("~/Songs", Home, Music));
+}

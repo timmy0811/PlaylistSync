@@ -1,3 +1,4 @@
+using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Sync;
 
 namespace PlaylistSync.Core.Playlists;
@@ -9,11 +10,37 @@ public static class PathUtil
     /// Turns user input into a full path without a trailing separator. A leading <c>~</c> expands to
     /// <paramref name="home"/>. Returns null for empty or relative input (we never resolve against the
     /// process working directory) and for paths the OS rejects.
+    /// <para>
+    /// Network addresses (<c>smb://user@nas/share/folder</c>, see <see cref="RemoteAddress"/>) are kept as addresses
+    /// in their canonical form; on Windows an SMB address becomes a UNC path. A kio-fuse / gvfs mount path (what a
+    /// file dialog may return for a network folder) is turned back into its address. <c>file://</c> URIs become paths.
+    /// </para>
     /// </summary>
     public static string? NormalizeUserPath(string? input, string home)
     {
         if (string.IsNullOrWhiteSpace(input)) return null;
         var path = input.Trim();
+
+        if (RemoteAddress.LooksLikeUri(path))
+        {
+            if (path.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!Uri.TryCreate(path, UriKind.Absolute, out var fileUri) || !fileUri.IsFile) return null;
+                path = fileUri.LocalPath;
+            }
+            else
+            {
+                var address = RemoteAddress.Parse(path);
+                if (address is null) return null;
+                if (!OperatingSystem.IsWindows()) return address.ToString();
+                path = address.ToUnc();
+                if (path is null) return null;
+            }
+        }
+        else if (RemoteAddress.FromMountPath(path) is { } mounted)
+        {
+            return mounted.ToString();
+        }
 
         if (path == "~")
             path = home;
@@ -32,6 +59,26 @@ public static class PathUtil
         // Keep a bare root ("/", "C:\") as is; strip the separator from everything else.
         return Path.GetPathRoot(path) == path ? path : Path.TrimEndingDirectorySeparator(path);
     }
+
+    /// <summary>The user's home folder.</summary>
+    public static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    /// <summary>The system Music folder (<c>~/Music</c> when the OS does not report one).</summary>
+    public static string MusicDir
+    {
+        get
+        {
+            var music = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            return string.IsNullOrEmpty(music) ? Path.Combine(Home, "Music") : music;
+        }
+    }
+
+    /// <summary>
+    /// The folder new playlists go into: the configured default folder (see <c>AppSettings.DefaultDirectory</c>), or
+    /// <paramref name="musicDir"/> when it is empty or not a usable full path.
+    /// </summary>
+    public static string BaseDirectory(string? configured, string home, string musicDir) =>
+        NormalizeUserPath(configured, home) ?? musicDir;
 
     /// <summary>
     /// A folder name that is valid on Linux and Windows: reserved characters become <c>_</c>, trailing dots and

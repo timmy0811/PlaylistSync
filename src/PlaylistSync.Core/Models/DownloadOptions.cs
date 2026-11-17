@@ -27,6 +27,10 @@ public sealed record DownloadOptions
     public bool TrackNumberPrefix { get; init; }
     public bool WriteM3u { get; init; }
 
+    // Cover
+    /// <summary>Save the playlist's cover image into the folder as <c>cover.jpg</c>/<c>cover.png</c> (never overwrites one).</summary>
+    public bool SaveFolderCover { get; init; }
+
     // Auth / network
     public CookieMode CookieMode { get; init; } = CookieMode.None;
     public string? CookiesFile { get; init; }
@@ -41,7 +45,35 @@ public sealed record DownloadOptions
     // Extras
     public bool SponsorBlockRemoveOfftopic { get; init; }
     public bool RedownloadMissing { get; init; } = true;
+    /// <summary>Download a song listed several times under different video ids (same artist, title and length) only once.</summary>
+    public bool SkipDuplicates { get; init; } = true;
+    /// <summary>
+    /// When a track turns out to be gone (deleted, or a release the label pulled), search YouTube Music for the same song
+    /// and download a matching upload instead. YouTube Music does this swap silently when playing the playlist.
+    /// </summary>
+    public bool FindReplacements { get; init; } = true;
     public string? ExtraArgs { get; init; }
 
     public const string DefaultFilenameTemplate = "%(artist,uploader)s - %(title)s.%(ext)s";
+
+    /// <summary>
+    /// The options a playlist syncs with: its override if it has one, else the global options. Cookies, proxy and the
+    /// other network settings always come from <paramref name="global"/>, so e.g. setting up cookies once covers every
+    /// playlist, including those with custom settings.
+    /// </summary>
+    public static DownloadOptions Effective(DownloadOptions global, DownloadOptions? playlistOverride) =>
+        playlistOverride is null ? global : playlistOverride.WithNetworkFrom(global);
+
+    /// <summary>A copy with the auth / network group taken from <paramref name="source"/>.</summary>
+    public DownloadOptions WithNetworkFrom(DownloadOptions source) => this with
+    {
+        CookieMode = source.CookieMode,
+        CookiesFile = source.CookiesFile,
+        CookiesBrowser = source.CookiesBrowser,
+        CookiesBrowserProfile = source.CookiesBrowserProfile,
+        Proxy = source.Proxy,
+        RateLimit = source.RateLimit,
+        SleepIntervalSeconds = source.SleepIntervalSeconds,
+        Retries = source.Retries,
+    };
 }

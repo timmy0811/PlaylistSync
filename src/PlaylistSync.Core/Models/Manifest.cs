@@ -14,6 +14,8 @@ public sealed class Manifest
     /// <summary>Remote playlist id (e.g. <c>PL…</c>); used to warn when a folder is reused for another playlist.</summary>
     public string? PlaylistId { get; set; }
     public string? PlaylistTitle { get; set; }
+    /// <summary>URL of the playlist image (custom cover if set) from the last fetch; see <see cref="Sources.PlaylistCover"/>.</summary>
+    public string? CoverUrl { get; set; }
     public Dictionary<string, TrackRecord> Tracks { get; set; } = new(StringComparer.Ordinal);
 
     public Manifest Clone() => new()
@@ -22,6 +24,7 @@ public sealed class Manifest
         PlaylistUrl = PlaylistUrl,
         PlaylistId = PlaylistId,
         PlaylistTitle = PlaylistTitle,
+        CoverUrl = CoverUrl,
         Tracks = Tracks.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal),
     };
 }
@@ -40,6 +43,15 @@ public sealed class TrackRecord
     public DateTimeOffset? LastSeenRemote { get; set; }
     public DateTimeOffset? DownloadedAt { get; set; }
     public string? LastError { get; set; }
+    /// <summary>
+    /// Set when this video is gone and an equivalent upload (same artist, title and length; typically a re-release of the
+    /// song) was downloaded instead. The record stays keyed by the playlist's own id.
+    /// </summary>
+    public string? ReplacementId { get; set; }
+    /// <summary>Last replacement search that found nothing; the next search waits a while (see <c>SyncService</c>).</summary>
+    public DateTimeOffset? ReplacementSearchedAt { get; set; }
+    /// <summary>With <see cref="TrackStatus.Duplicate"/>: the video id of the track that holds the same song.</summary>
+    public string? DuplicateOf { get; set; }
 
     /// <summary>All members are immutable values, so a memberwise copy is a deep copy.</summary>
     public TrackRecord Clone() => (TrackRecord)MemberwiseClone();

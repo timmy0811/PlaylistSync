@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using PlaylistSync.Core.Covers;
 using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Tools;
 
@@ -20,6 +21,13 @@ public sealed record DownloadRequest(
     /// <summary>1-based remote position, for the optional filename prefix.</summary>
     public int? TrackNumber { get; init; }
     public int TrackNumberWidth { get; init; } = 2;
+    /// <summary>
+    /// The video actually downloaded, when it differs from <see cref="VideoId"/> (a replacement for a gone video).
+    /// Temp dir and file naming stay keyed by <see cref="VideoId"/>.
+    /// </summary>
+    public string? SourceVideoId { get; init; }
+
+    public string EffectiveSourceId => SourceVideoId ?? VideoId;
 
     public string TrackTempDirectory => Path.Combine(TempRoot, VideoId);
 }
@@ -60,7 +68,11 @@ public interface ITrackDownloader
 /// Nothing half-written ever appears in the playlist folder; a failed or cancelled attempt leaves its temp dir
 /// so yt-dlp can resume the <c>.part</c> file next time.
 /// </summary>
-public sealed class YtDlpTrackDownloader(IProcessRunner runner, ILogger<YtDlpTrackDownloader> log) : ITrackDownloader
+/// <param name="thumbnails">Makes the track list image from the video thumbnail; without it none is kept.</param>
+public sealed class YtDlpTrackDownloader(
+    IProcessRunner runner,
+    ILogger<YtDlpTrackDownloader> log,
+    ITrackThumbnails? thumbnails = null) : ITrackDownloader
 {
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(250);
 
@@ -76,8 +88,11 @@ public sealed class YtDlpTrackDownloader(IProcessRunner runner, ILogger<YtDlpTra
             return DownloadResult.Failure(DownloadErrorKind.Other, $"Could not create the temp folder '{tempDir}': {ex.Message}");
         }
 
-        var args = YtDlpArgsBuilder.TrackDownload(request.VideoId, tempDir, request.Options,
-            request.Tools.Ffmpeg, request.Tools.JsRuntime, request.TrackNumber, request.TrackNumberWidth);
+        var ffmpeg = request.Tools.Ffmpeg is { Exists: true } f ? f : null;
+        var keepThumbnail = thumbnails is not null && ffmpeg is not null;
+        var args = YtDlpArgsBuilder.TrackDownload(request.EffectiveSourceId, tempDir, request.Options,
+            request.Tools.Ffmpeg, request.Tools.JsRuntime, request.TrackNumber, request.TrackNumberWidth,
+            OperatingSystem.IsWindows(), keepThumbnail);
 
         string? finalPath = null;
         var throttle = new ProgressThrottle(progress);
@@ -114,7 +129,7 @@ public sealed class YtDlpTrackDownloader(IProcessRunner runner, ILogger<YtDlpTra
         if (!result.Succeeded)
         {
             var error = DescribeError(result.StandardError);
-            log.LogWarning("Download of {Id} failed (exit {Exit}): {Error}", request.VideoId, result.ExitCode, error.Message);
+            log.LogWarning("Download of {Id} failed (exit {Exit}): {Error}", request.EffectiveSourceId, result.ExitCode, error.Message);
             return new DownloadResult(null, error);
         }
 
@@ -135,6 +150,10 @@ public sealed class YtDlpTrackDownloader(IProcessRunner runner, ILogger<YtDlpTra
             log.LogWarning(ex, "Could not move {File} into {Dir}", finalPath, request.TargetDirectory);
             return DownloadResult.Failure(DownloadErrorKind.Other, $"Could not move the file into the playlist folder: {ex.Message}");
         }
+
+        // After the file is in place the track counts as done, so cancelling must not undo it: the thumbnail is
+        // best effort with its own short timeout instead of the sync's token.
+        if (keepThumbnail) await thumbnails!.CreateFromTempDirAsync(request.VideoId, tempDir, ffmpeg!, CancellationToken.None).ConfigureAwait(false);
 
         TryDeleteDirectory(tempDir);
         log.LogInformation("Downloaded {Id} → {File} in {Elapsed:0.0}s", request.VideoId, relative, result.Duration.TotalSeconds);
@@ -187,7 +206,7 @@ public sealed class YtDlpTrackDownloader(IProcessRunner runner, ILogger<YtDlpTra
     }
 
     /// <summary>yt-dlp reports several times per second; pass on at most one update per interval, plus phase changes.</summary>
-    private sealed class ProgressThrottle(IProgress<DownloadProgress>? target)
+    internal sealed class ProgressThrottle(IProgress<DownloadProgress>? target)
     {
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private DownloadPhase? _lastPhase;

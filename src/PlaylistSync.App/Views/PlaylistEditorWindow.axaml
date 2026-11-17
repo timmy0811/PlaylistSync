@@ -37,13 +37,24 @@
     <StackPanel Spacing="4">
       <TextBlock Text="Folder" />
       <Grid ColumnDefinitions="*,Auto">
-        <TextBox Text="{Binding Directory}" PlaceholderText="Where the audio files go" />
+        <TextBox Text="{Binding Directory}" PlaceholderText="A local folder or smb://server/share/folder"
+                 ToolTip.Tip="A local folder, or a network folder such as smb://user@nas/share/Music/Mix (sftp://, ftp:// and webdav:// work too)" />
         <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseCommand}" />
       </Grid>
       <TextBlock Classes="error hint" Text="{Binding DirectoryError}" IsVisible="{Binding DirectoryError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       <TextBlock Classes="hint" Text="{Binding FolderText}"
                  IsVisible="{Binding ShowFolderText}"
                  Classes.muted="{Binding !FolderWarning}" Classes.warning="{Binding FolderWarning}" Classes.error="{Binding FolderError}" />
+    </StackPanel>
+
+    <!-- Download settings -->
+    <StackPanel Spacing="4" IsVisible="{Binding CanEditSettings}">
+      <TextBlock Text="Download settings" />
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="muted" Text="{Binding SettingsText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <Button Grid.Column="1" Margin="6,0,0,0" Content="Change…" Command="{Binding EditSettingsCommand}"
+                ToolTip.Tip="Format, quality, file names and more, just for this playlist" />
+      </Grid>
     </StackPanel>
 
     <TextBlock Classes="error hint" Text="{Binding SaveError}" IsVisible="{Binding SaveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

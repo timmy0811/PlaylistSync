@@ -9,8 +9,12 @@ namespace PlaylistSync.Core.Download;
 /// </summary>
 public static class CommandLineSplitter
 {
-    public static IReadOnlyList<string> Split(string? text)
+    public static IReadOnlyList<string> Split(string? text) => Split(text, out _);
+
+    /// <param name="unclosedQuote">True if a quote was still open at the end (it then runs to the end of the text).</param>
+    public static IReadOnlyList<string> Split(string? text, out bool unclosedQuote)
     {
+        unclosedQuote = false;
         var result = new List<string>();
         if (string.IsNullOrWhiteSpace(text)) return result;
 
@@ -55,6 +59,7 @@ public static class CommandLineSplitter
         }
 
         // An unterminated quote runs to the end of the text.
+        unclosedQuote = quote is not null;
         if (inArg) result.Add(current.ToString());
         return result;
     }

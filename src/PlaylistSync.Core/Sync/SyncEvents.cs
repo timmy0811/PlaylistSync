@@ -5,6 +5,8 @@ namespace PlaylistSync.Core.Sync;
 
 public enum SyncStage
 {
+    /// <summary>Only when cookies come from a browser; see <see cref="BrowserCookieCache"/>.</summary>
+    ReadingCookies,
     Fetching,
     Planning,
     Downloading,
@@ -45,6 +47,13 @@ public sealed record SyncResult(
     int BecameUnavailable,
     DateTimeOffset FinishedAt);
 
+public sealed record DeleteFailure(string Id, string Message);
+
+/// <param name="Manifest">The manifest after the deletion (saved).</param>
+/// <param name="Deleted">Ids whose file was deleted.</param>
+/// <param name="Failed">Ids that were refused or could not be deleted, with a user-facing reason.</param>
+public sealed record DeleteFilesResult(Manifest Manifest, IReadOnlyList<string> Deleted, IReadOnlyList<DeleteFailure> Failed);
+
 public enum SyncErrorKind
 {
     /// <summary>The remote playlist could not be fetched; see the inner <see cref="Sources.PlaylistFetchException"/>.</summary>
@@ -57,7 +66,7 @@ public enum SyncErrorKind
     ToolMissing,
     /// <summary>The folder's manifest belongs to another playlist. Retry with <c>allowDifferentPlaylist</c> after asking the user.</summary>
     DifferentPlaylist,
-    /// <summary>A sync of the same folder is already running.</summary>
+    /// <summary>A sync (or a file deletion) of the same folder is already running.</summary>
     AlreadyRunning,
 }
 

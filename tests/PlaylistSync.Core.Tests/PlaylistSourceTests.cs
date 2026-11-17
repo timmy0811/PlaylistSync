@@ -77,6 +77,21 @@ public class FlatPlaylistParserTests
     }
 
     [Fact]
+    public void Entry_with_nothing_but_an_id_is_a_deleted_video()
+    {
+        // What YouTube Music lists for a deleted video when not signed in (signed in it says "[Deleted video]").
+        var p = FlatPlaylistParser.Parse("""
+            {"_type":"playlist","id":"PL1","entries":[
+              {"_type":"url","ie_key":"Youtube","id":"gone","url":"https://music.youtube.com/watch?v=gone","thumbnails":[]},
+              {"_type":"url","ie_key":"Youtube","id":"ok","title":"Song","channel":"Artist","duration":200}
+            ]}
+            """);
+
+        Assert.Equal("deleted video", p.Tracks[0].UnavailableReason);
+        Assert.True(p.Tracks[1].IsAvailable);
+    }
+
+    [Fact]
     public void Non_video_entries_are_skipped()
     {
         var p = FlatPlaylistParser.Parse("""

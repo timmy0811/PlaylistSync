@@ -1,3 +1,4 @@
+using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Sync;
@@ -41,11 +42,18 @@ public static class PlaylistValidator
 
         string? dirError = null;
         var normalized = PathUtil.NormalizeUserPath(directory, home);
+        var remote = RemoteAddress.Parse(normalized);
         if (string.IsNullOrWhiteSpace(directory))
             dirError = "Choose a folder.";
+        else if (normalized is null && RemoteAddress.LooksLikeUri(directory))
+            dirError = OperatingSystem.IsWindows()
+                ? "Enter a network folder as smb://server/share/folder (or \\\\server\\share\\folder)."
+                : "Enter a network folder as smb://[user@]server/share/folder (sftp://, ftp:// and webdav(s):// work too).";
         else if (normalized is null)
             dirError = "Enter a full folder path.";
-        else if (Path.GetPathRoot(normalized) == normalized)
+        else if (remote is { IsRoot: true })
+            dirError = "Choose a folder inside the share, not the share itself.";
+        else if (remote is null && Path.GetPathRoot(normalized) == normalized)
             dirError = "Choose a folder, not a drive root.";
         else if (pathComparer.Equals(normalized, PathUtil.NormalizeUserPath(home, home)))
             dirError = "Choose a dedicated folder, not your home folder.";

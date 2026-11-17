@@ -10,6 +10,8 @@ public enum DownloadPhase
     Downloading,
     /// <summary>ffmpeg post-processing (converting, tagging, embedding the cover).</summary>
     Processing,
+    /// <summary>The video is gone; searching YouTube Music for an equivalent upload.</summary>
+    SearchingReplacement,
 }
 
 /// <param name="Percent">0–100 within the download phase; null when the size is unknown or while processing.</param>

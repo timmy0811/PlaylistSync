@@ -23,6 +23,32 @@ public class DownloadArgsTests
         args.Select((a, i) => (a, i)).Where(x => x.a == option && x.i + 1 < args.Count).Select(x => args[x.i + 1]);
 
     [Fact]
+    public void Replacement_search_targets_youtube_music_songs_with_the_url_last()
+    {
+        var o = new DownloadOptions { CookieMode = CookieMode.Browser, CookiesBrowser = "brave", ExtraArgs = "-x" };
+        var args = YtDlpArgsBuilder.ReplacementSearch("Mr. Bill Pish Posh (feat. Of the Trees)", 5, o, null);
+
+        Assert.Equal("--ignore-config", args[0]);
+        Assert.Contains("--flat-playlist", args);
+        Assert.Equal("5", ValueAfter(args, "--playlist-end"));
+        Assert.Equal("brave", ValueAfter(args, "--cookies-from-browser"));
+        Assert.DoesNotContain("-x", args); // extra args are for downloads only
+        Assert.Equal("--", args[^2]);
+        Assert.Equal("https://music.youtube.com/search?q=Mr.%20Bill%20Pish%20Posh%20%28feat.%20Of%20the%20Trees%29#songs", args[^1]);
+    }
+
+    [Fact]
+    public void Video_probe_reads_metadata_without_downloading()
+    {
+        var args = YtDlpArgsBuilder.VideoProbe("-abc", new DownloadOptions(), null);
+
+        Assert.Contains("--skip-download", args);
+        Assert.Contains("--dump-single-json", args);
+        Assert.Equal("--", args[^2]);
+        Assert.Equal("https://www.youtube.com/watch?v=-abc", args[^1]);
+    }
+
+    [Fact]
     public void Defaults_mp3_vbr0_with_metadata_and_square_cover()
     {
         var args = Build();

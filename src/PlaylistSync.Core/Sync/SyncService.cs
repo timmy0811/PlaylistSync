@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using PlaylistSync.Core.Covers;
 using PlaylistSync.Core.Download;
+using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Sources;
 using PlaylistSync.Core.Storage;
@@ -13,16 +15,29 @@ namespace PlaylistSync.Core.Sync;
 /// The manifest is saved after the plan and after every finished track, so a crash or cancel loses
 /// at most the tracks in flight. Files are never deleted.
 /// </summary>
+/// <param name="covers">Needed only for <see cref="DownloadOptions.SaveFolderCover"/>; without it no cover is saved.</param>
+/// <param name="folders">Resolves network folders (smb://…); without it only local folders work.</param>
+/// <param name="cookies">Reads browser cookies once per sync; without it every yt-dlp process reads the browser itself.</param>
+/// <param name="replacements">Finds a matching upload for a gone video (<see cref="DownloadOptions.FindReplacements"/>); without it none is searched.</param>
 public sealed class SyncService(
     IEnumerable<IPlaylistSource> sources,
     ManifestStore manifests,
     ITrackDownloader downloader,
     ToolLocator tools,
     TimeProvider clock,
-    ILogger<SyncService> log)
+    ILogger<SyncService> log,
+    ICoverStore? covers = null,
+    FolderResolver? folders = null,
+    BrowserCookieCache? cookies = null,
+    IReplacementFinder? replacements = null)
 {
+    private readonly FolderResolver _folders = folders ?? FolderResolver.LocalOnly;
+
     /// <summary>Hidden folder inside the playlist folder that holds in-progress downloads.</summary>
     public const string TempDirName = ".playlist-sync-tmp";
+
+    /// <summary>After a replacement search finds nothing, the track is searched again only after this long.</summary>
+    public static readonly TimeSpan ReplacementRetryInterval = TimeSpan.FromDays(7);
 
     private readonly ConcurrentDictionary<string, byte> _running = new(DiskSnapshot.PlatformComparer);
 
@@ -55,17 +70,100 @@ public sealed class SyncService(
         }
     }
 
+    /// <summary>
+    /// Deletes the local files of tracks that are gone remotely (see <see cref="TrackList.CanDeleteFile"/>), on the
+    /// user's explicit request. A removed-in-remote track is then forgotten; an unavailable one keeps its record
+    /// without a file. Untracked files and tracks still in the playlist are never deleted. Refused while the folder
+    /// is being synced. Rewrites the m3u8 file when that is enabled.
+    /// </summary>
+    /// <exception cref="SyncException">The folder is being synced, or the manifest can't be read or saved.</exception>
+    public async Task<DeleteFilesResult> DeleteFilesAsync(
+        PlaylistEntry entry, AppSettings settings, IReadOnlyCollection<string> ids, CancellationToken ct = default)
+    {
+        var key = Key(entry.Directory);
+        if (!_running.TryAdd(key, 0))
+            throw new SyncException(SyncErrorKind.AlreadyRunning, $"'{entry.Name}' is being synced. Try again when it has finished.");
+        try
+        {
+            var dir = (await ResolveFolderAsync(entry, ct).ConfigureAwait(false)).Path;
+            var manifest = await LoadManifestAsync(dir, ct).ConfigureAwait(false)
+                           ?? throw new SyncException(SyncErrorKind.Manifest, $"The folder '{dir}' has no sync history.");
+
+            var deleted = new List<string>();
+            var failed = new List<DeleteFailure>();
+            foreach (var id in ids.Distinct(StringComparer.Ordinal))
+            {
+                if (!manifest.Tracks.TryGetValue(id, out var record) || !TrackList.CanDeleteFile(record))
+                {
+                    failed.Add(new DeleteFailure(id, "Only files of tracks that are gone from the playlist can be deleted."));
+                    continue;
+                }
+                var path = TrackList.ResolveFile(dir, record.File!);
+                if (path is null)
+                {
+                    failed.Add(new DeleteFailure(id, $"'{record.File}' is not a file inside the playlist folder."));
+                    continue;
+                }
+                try
+                {
+                    File.Delete(path); // no error if it is already gone
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    log.LogWarning(ex, "Could not delete {Path}", path);
+                    failed.Add(new DeleteFailure(id, ex.Message));
+                    continue;
+                }
+
+                log.LogInformation("Deleted '{File}' of {Id} ({Status}) on user request", record.File, id, record.Status);
+                if (record.Status == TrackStatus.RemovedRemote)
+                    manifest.Tracks.Remove(id);
+                else
+                    record.File = null;
+                deleted.Add(id);
+            }
+
+            if (deleted.Count > 0)
+            {
+                // The files are gone: record that even if the caller gave up waiting.
+                await SaveUnlockedAsync(dir, manifest).ConfigureAwait(false);
+                if (entry.EffectiveOptions(settings).WriteM3u)
+                {
+                    try
+                    {
+                        await M3uWriter.WriteAsync(dir, entry.Name, manifest, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        log.LogWarning(ex, "Could not update the m3u8 file for '{Name}'", entry.Name);
+                    }
+                }
+            }
+            return new DeleteFilesResult(manifest, deleted, failed);
+        }
+        finally
+        {
+            _running.TryRemove(key, out _);
+        }
+    }
+
     private async Task<SyncResult> RunAsync(
         PlaylistEntry entry, AppSettings settings, IProgress<SyncEvent>? progress, bool allowDifferentPlaylist, CancellationToken ct)
     {
-        var options = entry.Overrides ?? settings.Download;
-        var dir = entry.Directory;
-        log.LogInformation("Sync of '{Name}' started ({Url} → {Dir})", entry.Name, entry.Url, dir);
+        var options = entry.EffectiveOptions(settings);
+        log.LogInformation("Sync of '{Name}' started ({Url} → {Dir})", entry.Name, entry.Url, entry.Directory);
+        var folder = await ResolveFolderAsync(entry, ct).ConfigureAwait(false);
+        var dir = folder.Path;
+        if (folder.IsRemote) log.LogInformation("Network folder {Address} is at {Dir}", entry.Directory, dir);
 
         var current = await LoadManifestAsync(dir, ct).ConfigureAwait(false);
 
+        var browserCookies = await ReadBrowserCookiesAsync(options, settings.Tools, progress, ct).ConfigureAwait(false);
+
         progress?.Report(new SyncStageChanged(SyncStage.Fetching));
-        var remote = await FetchAsync(entry, settings, options, ct).ConfigureAwait(false);
+        RemotePlaylist remote;
+        using (var fetchCookies = browserCookies?.WriteCopy())
+            remote = await FetchAsync(entry, settings, fetchCookies?.Apply(options) ?? options, ct).ConfigureAwait(false);
 
         progress?.Report(new SyncStageChanged(SyncStage.Planning));
         try
@@ -78,7 +176,8 @@ public sealed class SyncService(
         }
 
         var disk = await Task.Run(() => DiskSnapshot.Scan(dir), ct).ConfigureAwait(false);
-        var plan = SyncPlanner.Plan(remote, current, disk, entry.Url, options.RedownloadMissing, clock.GetUtcNow());
+        var plan = SyncPlanner.Plan(remote, current, disk, entry.Url, options.RedownloadMissing, clock.GetUtcNow(),
+            options.SkipDuplicates);
 
         if (plan.IsDifferentPlaylist && !allowDifferentPlaylist)
         {
@@ -102,7 +201,7 @@ public sealed class SyncService(
         if (downloadTools is not null)
         {
             progress?.Report(new SyncStageChanged(SyncStage.Downloading));
-            var tempRoot = PrepareTempRoot(dir);
+            var tempRoot = PrepareTempRoot(folder.IsRemote ? _folders.TempRootFor(entry.Directory) : Path.Combine(dir, TempDirName));
             var width = Math.Max(2, remote.Tracks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture).Length);
 
             var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(settings.Concurrency, 1, 8), CancellationToken = ct };
@@ -125,7 +224,9 @@ public sealed class SyncService(
                     }
                     progress?.Report(new TrackUpdated(id, snapshot, counts.Completed, counts.Total));
 
-                    var request = new DownloadRequest(id, dir, tempRoot, options, downloadTools)
+                    // Each yt-dlp process gets its own cookie file: yt-dlp writes the jar back when it exits.
+                    using var trackCookies = browserCookies?.WriteCopy();
+                    var request = new DownloadRequest(id, dir, tempRoot, trackCookies?.Apply(options) ?? options, downloadTools)
                     {
                         TrackNumber = record.RemoteIndex + 1,
                         TrackNumberWidth = width,
@@ -133,9 +234,15 @@ public sealed class SyncService(
                     var trackProgress = progress is null ? null : new InlineProgress<DownloadProgress>(p => progress.Report(new TrackProgress(id, p)));
 
                     DownloadResult result;
+                    ReplacementAttempt? replacement = null;
                     try
                     {
                         result = await downloader.DownloadAsync(request, trackProgress, token).ConfigureAwait(false);
+                        if (result.Error?.Kind == DownloadErrorKind.Unavailable && replacements is not null && options.FindReplacements)
+                        {
+                            replacement = await TryReplacementAsync(request, snapshot, result, trackProgress, token).ConfigureAwait(false);
+                            if (replacement is not null) result = replacement.Result;
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -149,6 +256,7 @@ public sealed class SyncService(
                         result = DownloadResult.Failure(DownloadErrorKind.Other, ex.Message);
                     }
 
+                    if (replacement?.Result.Succeeded == true) counts.AddReplaced();
                     if (result.Succeeded)
                     {
                         await UpdateAsync(id, r =>
@@ -157,15 +265,24 @@ public sealed class SyncService(
                             r.Status = TrackStatus.Synced;
                             r.DownloadedAt = clock.GetUtcNow();
                             r.LastError = null;
+                            // Null when the original downloaded fine (it is back), so the record stops pointing elsewhere.
+                            r.ReplacementId = replacement?.ReplacementId;
+                            r.ReplacementSearchedAt = null;
                         }, countAs: TrackStatus.Synced).ConfigureAwait(false);
                     }
                     else
                     {
                         var status = result.Error!.Kind == DownloadErrorKind.Unavailable ? TrackStatus.Unavailable : TrackStatus.Failed;
+                        if (result.Error.Kind == DownloadErrorKind.NeedsCookies) cookies?.Invalidate();
                         await UpdateAsync(id, r =>
                         {
                             r.Status = status;
                             r.LastError = result.Error.Message;
+                            if (replacement is not null)
+                            {
+                                r.ReplacementId = replacement.ReplacementId;
+                                r.ReplacementSearchedAt = replacement.SearchedAt ?? r.ReplacementSearchedAt;
+                            }
                         }, countAs: status).ConfigureAwait(false);
                     }
                 }).ConfigureAwait(false);
@@ -201,9 +318,11 @@ public sealed class SyncService(
             }
         }
 
+        if (options.SaveFolderCover) await SaveFolderCoverAsync(entry, dir, final.CoverUrl, ct).ConfigureAwait(false);
+
         var finishedAt = clock.GetUtcNow();
-        log.LogInformation("Sync of '{Name}' finished: {Downloaded} downloaded, {Failed} failed, {Unavailable} unavailable",
-            entry.Name, counts.Downloaded, counts.Failed, counts.Unavailable);
+        log.LogInformation("Sync of '{Name}' finished: {Downloaded} downloaded ({Replaced} via replacement), {Failed} failed, {Unavailable} unavailable",
+            entry.Name, counts.Downloaded, counts.Replaced, counts.Failed, counts.Unavailable);
         return new SyncResult(final, plan.Changes, plan.Untracked, counts.Downloaded, counts.Failed, counts.Unavailable, finishedAt);
 
         async Task UpdateAsync(string id, Action<TrackRecord> change, TrackStatus? countAs)
@@ -224,6 +343,86 @@ public sealed class SyncService(
                 gate.Release();
             }
             progress?.Report(new TrackUpdated(id, snapshot, counts.Completed, counts.Total));
+        }
+    }
+
+    /// <param name="Result">What to record for the track: the replacement's download, or the original failure.</param>
+    /// <param name="ReplacementId">The replacement to remember (null once it is gone too).</param>
+    /// <param name="SearchedAt">Set when a search ran and found nothing.</param>
+    private sealed record ReplacementAttempt(DownloadResult Result, string? ReplacementId, DateTimeOffset? SearchedAt);
+
+    /// <summary>
+    /// The original video is gone: download the replacement found earlier, or search for one (unless a recent search
+    /// found nothing, or the manifest lacks the title, artist or length to match on). Null when nothing was tried, or
+    /// the search failed (the next sync tries again).
+    /// </summary>
+    private async Task<ReplacementAttempt?> TryReplacementAsync(
+        DownloadRequest request, TrackRecord record, DownloadResult original, IProgress<DownloadProgress>? progress, CancellationToken ct)
+    {
+        var candidateId = record.ReplacementId;
+        if (candidateId is null)
+        {
+            if (string.IsNullOrWhiteSpace(record.Title) || string.IsNullOrWhiteSpace(record.Uploader) || record.DurationSec is not > 0)
+                return null;
+            if (record.ReplacementSearchedAt is { } searched && clock.GetUtcNow() - searched < ReplacementRetryInterval)
+                return null;
+
+            progress?.Report(new DownloadProgress(DownloadPhase.SearchingReplacement));
+            var query = new ReplacementQuery(request.VideoId, record.Title, record.Uploader, record.DurationSec.Value);
+            var found = await replacements!.FindAsync(query, request.Options, request.Tools, ct).ConfigureAwait(false);
+            switch (found.Outcome)
+            {
+                case ReplacementOutcome.Error:
+                    return null;
+                case ReplacementOutcome.NotFound:
+                    return new ReplacementAttempt(DownloadResult.Failure(DownloadErrorKind.Unavailable,
+                        original.Error!.Message + "\nNo matching upload of this song was found on YouTube Music."), null, clock.GetUtcNow());
+            }
+            candidateId = found.Replacement!.VideoId;
+        }
+
+        var result = await downloader.DownloadAsync(request with { SourceVideoId = candidateId }, progress, ct).ConfigureAwait(false);
+        if (result.Succeeded)
+        {
+            log.LogInformation("Downloaded {Id} from its replacement {Replacement}", request.VideoId, candidateId);
+            return new ReplacementAttempt(result, candidateId, null);
+        }
+
+        // A gone replacement is forgotten so the next sync searches afresh; any other failure is retried as is.
+        var gone = result.Error!.Kind == DownloadErrorKind.Unavailable;
+        return new ReplacementAttempt(
+            new DownloadResult(null, result.Error with { Message = $"{original.Error!.Message}\nReplacement {candidateId}: {result.Error.Message}" }),
+            gone ? null : candidateId,
+            null);
+    }
+
+    /// <summary>Best effort: a missing cover never fails the sync.</summary>
+    private async Task SaveFolderCoverAsync(PlaylistEntry entry, string dir, string? url, CancellationToken ct)
+    {
+        if (covers is null || url is null) return;
+        if (PlaylistCover.IsVideoThumbnail(url))
+        {
+            log.LogDebug("'{Name}' has no cover of its own (only a video thumbnail); no cover file saved", entry.Name);
+            return;
+        }
+        try
+        {
+            if (FolderCover.FindExisting(dir) is not null) return;
+            var image = await covers.GetAsync(entry.Id, url, ct).ConfigureAwait(false);
+            if (image is null) return;
+            var result = await FolderCover.SaveAsync(dir, image, ct).ConfigureAwait(false);
+            if (result == FolderCoverResult.Written)
+                log.LogInformation("Saved the cover of '{Name}' into its folder", entry.Name);
+            else if (result == FolderCoverResult.UnsupportedFormat)
+                log.LogInformation("The cover of '{Name}' is not JPEG or PNG; no cover file saved", entry.Name);
+        }
+        catch (OperationCanceledException)
+        {
+            // The tracks are done; skipping the cover is fine.
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.LogWarning(ex, "Could not save the cover file for '{Name}'", entry.Name);
         }
     }
 
@@ -253,9 +452,24 @@ public sealed class SyncService(
         }
         catch (PlaylistFetchException ex)
         {
+            // The user will likely sign in again in the browser; don't keep serving the old cookies.
+            if (ex.Kind == FetchErrorKind.NeedsCookies) cookies?.Invalidate();
             throw new SyncException(ex.Kind == FetchErrorKind.ToolMissing ? SyncErrorKind.ToolMissing : SyncErrorKind.Fetch,
                 ex.Message, ex);
         }
+    }
+
+    /// <summary>
+    /// Reads the browser's cookies once for the whole sync. Null when cookies don't come from a browser, there is no
+    /// cache, yt-dlp is missing (the fetch reports that) or the read failed (yt-dlp then reads the browser per process).
+    /// </summary>
+    private async Task<CookieSnapshot?> ReadBrowserCookiesAsync(
+        DownloadOptions options, ToolSettings toolSettings, IProgress<SyncEvent>? progress, CancellationToken ct)
+    {
+        if (cookies is null || options.CookieMode != CookieMode.Browser) return null;
+        if (tools.Locate(ToolKind.YtDlp, toolSettings) is not { Exists: true } ytDlp) return null;
+        progress?.Report(new SyncStageChanged(SyncStage.ReadingCookies));
+        return await cookies.GetAsync(options, ytDlp, ct).ConfigureAwait(false);
     }
 
     private DownloadTools ResolveTools(ToolSettings settings)
@@ -303,9 +517,20 @@ public sealed class SyncService(
         }
     }
 
-    private static string PrepareTempRoot(string dir)
+    private async Task<ResolvedFolder> ResolveFolderAsync(PlaylistEntry entry, CancellationToken ct)
     {
-        var tempRoot = Path.Combine(dir, TempDirName);
+        try
+        {
+            return await _folders.ResolveAsync(entry.Directory, ct).ConfigureAwait(false);
+        }
+        catch (FolderUnavailableException ex)
+        {
+            throw new SyncException(SyncErrorKind.Directory, ex.Message, ex);
+        }
+    }
+
+    private static string PrepareTempRoot(string tempRoot)
+    {
         var info = Directory.CreateDirectory(tempRoot);
         // The dot hides it on Linux; Windows needs the attribute so the folder scan skips it.
         if (OperatingSystem.IsWindows()) info.Attributes |= FileAttributes.Hidden;
@@ -351,13 +576,16 @@ public sealed class SyncService(
 
     private sealed class Counts(int total)
     {
-        private int _downloaded, _failed, _unavailable;
+        private int _downloaded, _failed, _unavailable, _replaced;
 
         public int Total { get; } = total;
         public int Downloaded => Volatile.Read(ref _downloaded);
         public int Failed => Volatile.Read(ref _failed);
         public int Unavailable => Volatile.Read(ref _unavailable);
+        public int Replaced => Volatile.Read(ref _replaced);
         public int Completed => Downloaded + Failed + Unavailable;
+
+        public void AddReplaced() => Interlocked.Increment(ref _replaced);
 
         public void Add(TrackStatus status)
         {

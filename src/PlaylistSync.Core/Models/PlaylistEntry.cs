@@ -8,8 +8,13 @@ public sealed record PlaylistEntry
     public required string Url { get; init; }
     public required string Directory { get; init; }
     public DateTimeOffset? LastSync { get; init; }
-    /// <summary>Full override of the global download options; null = use global.</summary>
+    /// <summary>
+    /// The playlist's own download options; null = use the global ones. Network settings are always global,
+    /// see <see cref="DownloadOptions.Effective"/>.
+    /// </summary>
     public DownloadOptions? Overrides { get; init; }
+
+    public DownloadOptions EffectiveOptions(AppSettings settings) => DownloadOptions.Effective(settings.Download, Overrides);
 }
 
 public sealed record Library

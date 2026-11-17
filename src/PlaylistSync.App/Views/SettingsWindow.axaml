@@ -1,0 +1,363 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PlaylistSync.App.ViewModels"
+        x:Class="PlaylistSync.App.Views.SettingsWindow"
+        x:DataType="vm:SettingsViewModel"
+        Title="{Binding Title}"
+        Width="820" Height="620" MinWidth="640" MinHeight="460"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding CancelCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel>
+    <!-- Footer -->
+    <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,1,0,0" Padding="20,12">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel VerticalAlignment="Center" Spacing="2">
+          <TextBlock Classes="error hint" Text="{Binding ErrorSummary}"
+                     IsVisible="{Binding ErrorSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="error hint" Text="{Binding SaveError}"
+                     IsVisible="{Binding SaveError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Classes="muted hint" Text="Changes apply from the next sync. Existing files are not converted or renamed.">
+            <TextBlock.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="!HasErrors" />
+                <Binding Path="SaveError" Converter="{x:Static StringConverters.IsNullOrEmpty}" />
+              </MultiBinding>
+            </TextBlock.IsVisible>
+          </TextBlock>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="12,0,0,0">
+          <Button Content="Cancel" Command="{Binding CancelCommand}" />
+          <Button Classes="accent" Content="Save" Command="{Binding SaveCommand}" IsDefault="True" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Playlist scope: global or custom -->
+    <Border DockPanel.Dock="Top" IsVisible="{Binding IsPlaylist}" Padding="20,14,20,10"
+            BorderBrush="{DynamicResource DividerBrush}" BorderThickness="0,0,0,1">
+      <StackPanel Spacing="6">
+        <RadioButton Content="Use the global settings" IsChecked="{Binding UseGlobal}" />
+        <RadioButton Content="Use custom settings for this playlist" IsChecked="{Binding UseCustom}" />
+        <TextBlock Classes="muted hint"
+                   Text="Cookies, proxy and the other network settings always come from the global settings." />
+      </StackPanel>
+    </Border>
+
+    <TabControl TabStripPlacement="Left" Padding="0" Margin="8,8,0,0">
+      <TabControl.Styles>
+        <Style Selector="TabItem">
+          <Setter Property="FontSize" Value="14" />
+          <Setter Property="MinHeight" Value="36" />
+          <Setter Property="Padding" Value="12,4" />
+        </Style>
+      </TabControl.Styles>
+
+      <!-- ───────────── Audio ───────────── -->
+      <TabItem Header="Audio">
+        <ScrollViewer>
+          <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
+                      IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
+            <TextBlock Classes="h2" Text="Audio" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Format" />
+              <ComboBox Width="280" ItemsSource="{x:Static vm:DownloadOptionsViewModel.Formats}" SelectedItem="{Binding Format}" />
+            </StackPanel>
+            <StackPanel Classes="field" IsVisible="{Binding HasQuality}">
+              <TextBlock Text="Quality" />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <RadioButton Content="Variable bitrate" IsChecked="{Binding IsVbr}" VerticalAlignment="Center" />
+                <NumericUpDown Width="130" Minimum="0" Maximum="10" Increment="1" FormatString="0"
+                               Value="{Binding VbrLevel}" IsEnabled="{Binding IsVbr}" VerticalAlignment="Center" />
+                <TextBlock Classes="muted" Text="0 = best, 10 = smallest" VerticalAlignment="Center" />
+              </StackPanel>
+              <TextBlock Classes="error hint" Text="{Binding VbrLevelError}"
+                         IsVisible="{Binding VbrLevelError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <StackPanel Orientation="Horizontal" Spacing="10">
+                <RadioButton Content="Constant bitrate" IsChecked="{Binding IsCbr}" VerticalAlignment="Center" />
+                <ComboBox Width="130" ItemsSource="{x:Static vm:DownloadOptionsViewModel.Bitrates}" SelectedItem="{Binding CbrKbps}"
+                          IsEnabled="{Binding IsCbr}" VerticalAlignment="Center" />
+                <TextBlock Classes="muted" Text="kbps" VerticalAlignment="Center" />
+              </StackPanel>
+            </StackPanel>
+            <TextBlock Classes="muted hint" Text="{Binding QualityHint}" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── Metadata ───────────── -->
+      <TabItem Header="Metadata">
+        <ScrollViewer>
+          <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
+                      IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
+            <TextBlock Classes="h2" Text="Tags" />
+            <StackPanel Classes="field">
+              <CheckBox Content="Write tags (title, artist, album, date…)" IsChecked="{Binding EmbedMetadata}" />
+              <CheckBox Content="Split &quot;Artist - Title&quot; video titles into artist and title" IsChecked="{Binding ParseArtistTitle}"
+                        IsEnabled="{Binding EmbedMetadata}" />
+              <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                         Text="Only when YouTube doesn't know the artist. YouTube Music tracks already come with artist and album." />
+              <CheckBox Content="Embed chapters" IsChecked="{Binding EmbedChapters}" />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Cover" />
+            <StackPanel Classes="field">
+              <CheckBox Content="Embed the video thumbnail as cover art" IsChecked="{Binding EmbedThumbnail}" />
+              <CheckBox Content="Crop it to a square" IsChecked="{Binding CropThumbnailSquare}" IsEnabled="{Binding EmbedThumbnail}"
+                        Margin="28,0,0,0" />
+              <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                         Text="YouTube thumbnails are 16:9; music players show covers as squares." />
+              <TextBlock Classes="warning hint" Text="{Binding CoverHint}"
+                         IsVisible="{Binding CoverHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── Files ───────────── -->
+      <TabItem Header="Files">
+        <ScrollViewer>
+          <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
+                      IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
+            <TextBlock Classes="h2" Text="File names" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Name template" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding FilenameTemplate}" FontFamily="monospace" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Default" Command="{Binding ResetTemplateCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding FilenameTemplateError}"
+                         IsVisible="{Binding FilenameTemplateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint"
+                         Text="yt-dlp output template. Useful fields: %(title)s, %(artist)s, %(uploader)s, %(album)s, %(id)s. %(a,b)s uses b when a is missing; / makes sub-folders." />
+            </StackPanel>
+            <StackPanel Classes="field">
+              <CheckBox Content="Put the playlist position in front (01 - …)" IsChecked="{Binding TrackNumberPrefix}" />
+              <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                         Text="The number is fixed when a track is downloaded; files are not renumbered when the playlist order changes." />
+              <CheckBox Content="Only ASCII characters, no spaces (portable file names)" IsChecked="{Binding RestrictFilenames}" />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Extra files in the folder" />
+            <StackPanel Classes="field">
+              <CheckBox Content="Write an .m3u8 playlist in the remote order" IsChecked="{Binding WriteM3u}" />
+              <CheckBox Content="Save the playlist cover as cover.jpg" IsChecked="{Binding SaveFolderCover}" />
+              <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                         Text="For music players that show a folder image. Only when the playlist has its own cover; an existing cover/folder image is never replaced." />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── Network (global only) ───────────── -->
+      <TabItem Header="Network" IsVisible="{Binding IsGlobal}">
+        <ScrollViewer>
+          <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel">
+            <TextBlock Classes="h2" Text="Cookies" />
+            <StackPanel Classes="field">
+              <TextBlock Classes="muted hint"
+                         Text="Needed for private playlists, Watch later / Liked videos, age-restricted videos, and when YouTube asks to sign in to confirm you're not a bot." />
+              <ComboBox Width="280" ItemsSource="{x:Static vm:DownloadOptionsViewModel.CookieModes}" SelectedItem="{Binding SelectedCookieMode}" />
+            </StackPanel>
+            <StackPanel Classes="field" IsVisible="{Binding IsCookieFile}">
+              <TextBlock Text="cookies.txt (Netscape format)" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding CookiesFile}" PlaceholderText="Path to the exported cookies file" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseCookiesFileCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding CookiesFileError}"
+                         IsVisible="{Binding CookiesFileError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <StackPanel Classes="field" IsVisible="{Binding IsCookieBrowser}">
+              <TextBlock Text="Browser" />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <ComboBox Width="180" ItemsSource="{x:Static vm:DownloadOptionsViewModel.Browsers}" SelectedItem="{Binding CookiesBrowser}"
+                          PlaceholderText="Choose…" />
+                <TextBox Width="240" Text="{Binding CookiesBrowserProfile}" PlaceholderText="Profile (optional)" />
+              </StackPanel>
+              <TextBlock Classes="error hint" Text="{Binding CookiesBrowserError}"
+                         IsVisible="{Binding CookiesBrowserError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" Text="Sign in to YouTube in that browser. Chromium-based browsers may need to be closed while syncing." />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Connection" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Proxy" />
+              <TextBox Text="{Binding Proxy}" PlaceholderText="None, e.g. socks5://127.0.0.1:1080" />
+              <TextBlock Classes="error hint" Text="{Binding ProxyError}"
+                         IsVisible="{Binding ProxyError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <StackPanel Classes="field">
+              <TextBlock Text="Download speed limit (per track)" />
+              <TextBox Width="200" HorizontalAlignment="Left" Text="{Binding RateLimit}" PlaceholderText="Unlimited, e.g. 2M" />
+              <TextBlock Classes="error hint" Text="{Binding RateLimitError}"
+                         IsVisible="{Binding RateLimitError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+            <Grid ColumnDefinitions="Auto,24,Auto">
+              <StackPanel Classes="field">
+                <TextBlock Text="Pause before each download (s)" />
+                <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="0" Maximum="3600" Increment="1" FormatString="0"
+                               Value="{Binding SleepIntervalSeconds}" />
+                <TextBlock Classes="error hint" Text="{Binding SleepIntervalSecondsError}"
+                           IsVisible="{Binding SleepIntervalSecondsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Classes="field">
+                <TextBlock Text="Retries" />
+                <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="0" Maximum="100" Increment="1" FormatString="0"
+                               Value="{Binding Retries}" />
+                <TextBlock Classes="error hint" Text="{Binding RetriesError}"
+                           IsVisible="{Binding RetriesError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Classes="muted hint" Text="A pause and fewer parallel downloads help when YouTube rate-limits you." />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── Advanced ───────────── -->
+      <TabItem Header="Advanced">
+        <ScrollViewer>
+          <StackPanel Classes="page">
+            <StackPanel Spacing="14" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
+                        IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
+              <TextBlock Classes="h2" Text="Sync" />
+              <StackPanel Classes="field">
+                <CheckBox Content="Download tracks again when their file was deleted" IsChecked="{Binding RedownloadMissing}" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0" Text="When off, they are listed as missing instead." />
+                <CheckBox Content="Skip duplicate tracks" IsChecked="{Binding SkipDuplicates}" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0" TextWrapping="Wrap"
+                           Text="When the same song (same artist, title and length) is in the playlist under several videos, for example the album track and the music video, download it only once. The others are listed as duplicates." />
+                <CheckBox Content="Find a replacement for unavailable tracks" IsChecked="{Binding FindReplacements}" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0" TextWrapping="Wrap"
+                           Text="When a video is gone, search YouTube Music for the same song (same artist, title and length) and download that instead, as YouTube Music does when it plays the playlist. Tracks without a close match stay marked unavailable." />
+                <CheckBox Content="Cut non-music parts (SponsorBlock)" IsChecked="{Binding SponsorBlockRemoveOfftopic}" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                           Text="Removes intros, talking and skits that SponsorBlock users marked as non-music in music videos." />
+              </StackPanel>
+
+              <TextBlock Classes="h2" Text="Extra yt-dlp arguments" />
+              <StackPanel Classes="field">
+                <TextBox Text="{Binding ExtraArgs}" FontFamily="monospace" PlaceholderText="e.g. --embed-subs" />
+                <TextBlock Classes="error hint" Text="{Binding ExtraArgsError}"
+                           IsVisible="{Binding ExtraArgsError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="warning hint" Text="{Binding ExtraArgsWarning}"
+                           IsVisible="{Binding ExtraArgsWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="muted hint"
+                           Text="Added to every track download, after the app's own options, so they can override them. Quote arguments with spaces. No shell is involved." />
+              </StackPanel>
+            </StackPanel>
+
+            <StackPanel Classes="field" IsVisible="{Binding IsGlobal}">
+              <TextBlock Classes="h2" Text="Parallel downloads" />
+              <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="1" Maximum="8" Increment="1" FormatString="0"
+                             Value="{Binding Concurrency}" />
+              <TextBlock Classes="error hint" Text="{Binding ConcurrencyError}"
+                         IsVisible="{Binding ConcurrencyError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" Text="Tracks downloaded at the same time within one playlist." />
+            </StackPanel>
+
+            <Button HorizontalAlignment="Left" Content="Restore default download settings" Command="{Binding ResetDownloadDefaultsCommand}"
+                    IsEnabled="{Binding IsOptionsEditable}"
+                    ToolTip.Tip="Audio, metadata, files and sync options. Network settings and extra arguments are kept." />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── Tools (global only) ───────────── -->
+      <TabItem Header="Tools" IsVisible="{Binding IsGlobal}">
+        <ScrollViewer>
+          <StackPanel Classes="page">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Classes="h2" Text="External tools" VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Width="40" MinWidth="40" VerticalAlignment="Center" IsVisible="{Binding IsCheckingTools}" />
+                <Button Content="Check again" Command="{Binding CheckToolsCommand}" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Classes="muted hint"
+                       Text="Leave a path empty to find the tool automatically (app folder, then PATH)." />
+            <ItemsControl ItemsSource="{Binding ToolRows}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="18" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ToolRowViewModel">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                    <TextBlock Classes="muted hint" Text="{Binding Description}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding CanEditPath}">
+                      <TextBox Text="{Binding Path}" PlaceholderText="Detect automatically" />
+                      <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseCommand}" />
+                      <Button Grid.Column="2" Margin="6,0,0,0" Content="Auto" Command="{Binding ClearPathCommand}"
+                              ToolTip.Tip="Clear the path and detect the tool automatically" />
+                    </Grid>
+                    <TextBlock Classes="error hint" Text="{Binding PathError}"
+                               IsVisible="{Binding PathError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <SelectableTextBlock Classes="hint" Text="{Binding StatusText}" TextWrapping="Wrap"
+                                         Classes.ok="{Binding IsOk}" Classes.error="{Binding IsError}"
+                                         Classes.warning="{Binding !IsOk}" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ───────────── App (global only) ───────────── -->
+      <TabItem Header="App" IsVisible="{Binding IsGlobal}">
+        <ScrollViewer>
+          <StackPanel Classes="page">
+            <TextBlock Classes="h2" Text="Library" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Default folder for new playlists" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding DefaultDirectory}" PlaceholderText="{x:Static vm:SettingsViewModel.MusicFolder}" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseDefaultDirectoryCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding DefaultDirectoryError}"
+                         IsVisible="{Binding DefaultDirectoryError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="A new playlist gets its own sub-folder here, named after the playlist. Empty = your Music folder. Existing playlists are not moved." />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Playback" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Player" />
+              <ComboBox Width="320" ItemsSource="{Binding Players}" SelectedItem="{Binding SelectedPlayer}" />
+              <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0" IsVisible="{Binding IsCustomPlayer}">
+                <TextBox Text="{Binding PlayerPath}" PlaceholderText="Full path of the player program" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowsePlayerCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding PlayerPathError}"
+                         IsVisible="{Binding PlayerPathError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="Used by Play, Shuffle and a track's Play. The system default can differ per file type (audio files vs. the .m3u queue Shuffle opens); pick a player to use the same one for both. A program without a path falls back to the system default." />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Appearance" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Theme" />
+              <ComboBox Width="240" ItemsSource="{x:Static vm:SettingsViewModel.Themes}" SelectedItem="{Binding SelectedTheme}" />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Logging" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Log level" />
+              <ComboBox Width="320" ItemsSource="{x:Static vm:SettingsViewModel.LogLevels}" SelectedItem="{Binding SelectedLogLevel}" />
+              <SelectableTextBlock Classes="muted hint" Text="{Binding LogDir}" TextWrapping="Wrap" />
+              <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                <Button Content="Open log folder" Command="{Binding OpenLogFolderCommand}" />
+                <Button Content="Open settings folder" Command="{Binding OpenConfigFolderCommand}" />
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+  </DockPanel>
+</Window>

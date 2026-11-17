@@ -23,4 +23,9 @@ public enum TrackStatus
     Failed,
     /// <summary>Recorded as downloaded, but the file is gone from disk.</summary>
     MissingLocal,
+    /// <summary>
+    /// The same song (artist, title, length) under another video id is already in the playlist, so this one is not
+    /// downloaded (see <see cref="DownloadOptions.SkipDuplicates"/> and <see cref="TrackRecord.DuplicateOf"/>).
+    /// </summary>
+    Duplicate,
 }

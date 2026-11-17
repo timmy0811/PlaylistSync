@@ -1,0 +1,75 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PlaylistSync.App.ViewModels"
+        x:Class="PlaylistSync.App.Views.ToolboxWindow"
+        x:DataType="vm:ToolboxViewModel"
+        Title="Toolbox"
+        Width="560" SizeToContent="Height" MinWidth="460" CanResize="True"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+  <StackPanel Margin="20,16" Spacing="10">
+    <!-- ───────────── Single download ───────────── -->
+    <TextBlock Classes="h1" Text="Download a single video or track" />
+    <TextBlock Classes="muted hint" TextWrapping="Wrap"
+               Text="Any link yt-dlp supports. The file is saved as-is into the folder; it is not added to a playlist." />
+
+    <TextBox Text="{Binding Url}" PlaceholderText="https://www.youtube.com/watch?v=…" IsEnabled="{Binding !IsBusy}" />
+
+    <Grid ColumnDefinitions="Auto,*" IsEnabled="{Binding !IsBusy}">
+      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <RadioButton GroupName="kind" Content="Audio" IsChecked="{Binding IsAudio}" />
+        <RadioButton GroupName="kind" Content="Video" IsChecked="{Binding IsVideo}" />
+      </StackPanel>
+      <ComboBox Grid.Column="1" Margin="16,0,0,0" HorizontalAlignment="Stretch" IsVisible="{Binding IsAudio}"
+                ItemsSource="{x:Static vm:ToolboxViewModel.AudioFormats}" SelectedItem="{Binding SelectedAudioFormat}"
+                ToolTip.Tip="Audio format. Quality, tags and cover follow the global download settings." />
+      <ComboBox Grid.Column="1" Margin="16,0,0,0" HorizontalAlignment="Stretch" IsVisible="{Binding IsVideo}"
+                ItemsSource="{x:Static vm:ToolboxViewModel.VideoQualities}" SelectedItem="{Binding SelectedVideoQuality}"
+                ToolTip.Tip="Preferred maximum resolution (MP4 when available, otherwise MKV)" />
+    </Grid>
+
+    <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding !IsBusy}">
+      <TextBox Text="{Binding Folder}" PlaceholderText="Folder" />
+      <Button Grid.Column="1" Margin="8,0,0,0" Content="Browse…" Command="{Binding BrowseCommand}" />
+    </Grid>
+
+    <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
+      <Panel>
+        <Button Classes="accent" Content="Download" Command="{Binding DownloadCommand}" IsDefault="True"
+                IsVisible="{Binding !IsBusy}" />
+        <Button Content="Cancel" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}" />
+      </Panel>
+      <Grid Grid.Column="1" ColumnDefinitions="*,Auto" Margin="12,0,0,0" VerticalAlignment="Center">
+        <ProgressBar MinWidth="0" Minimum="0" Maximum="100" Value="{Binding Percent}" VerticalAlignment="Center"
+                     IsIndeterminate="{Binding IsIndeterminate}" IsVisible="{Binding IsBusy}" />
+        <TextBlock Grid.Column="1" Classes="muted" Margin="10,0,0,0" MinWidth="120" VerticalAlignment="Center"
+                   Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" />
+      </Grid>
+    </Grid>
+
+    <SelectableTextBlock Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                         IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+    <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasResult}">
+      <TextBlock Text="{Binding ResultName, StringFormat='✓ {0}'}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                 ToolTip.Tip="{Binding ResultFile}" />
+      <Button Grid.Column="1" Classes="small" Margin="8,0,0,0" Content="▶ Play" Command="{Binding PlayResultCommand}" />
+      <Button Grid.Column="2" Classes="small" Margin="6,0,0,0" Content="Open folder" Command="{Binding OpenResultFolderCommand}" />
+    </Grid>
+
+    <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="0,8" />
+
+    <!-- ───────────── Utilities ───────────── -->
+    <TextBlock Classes="h1" Text="Utilities" />
+    <WrapPanel Orientation="Horizontal">
+      <Button Classes="small" Margin="0,0,6,6" Content="Open log folder" Command="{Binding OpenLogFolderCommand}" />
+      <Button Classes="small" Margin="0,0,6,6" Content="Open settings folder" Command="{Binding OpenConfigFolderCommand}"
+              ToolTip.Tip="settings.json and library.json" />
+      <Button Classes="small" Margin="0,0,6,6" Content="Open data folder" Command="{Binding OpenDataFolderCommand}"
+              ToolTip.Tip="Logs, cached covers and app-managed tools" />
+      <Button Classes="small" Margin="0,0,6,6" Content="Clear toolbox temp files" Command="{Binding ClearTempFilesCommand}"
+              ToolTip.Tip="Delete leftovers of cancelled or failed toolbox downloads. Saved files are never touched." />
+    </WrapPanel>
+    <TextBlock Classes="muted hint" Text="{Binding UtilityStatus}" TextWrapping="Wrap"
+               IsVisible="{Binding UtilityStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+  </StackPanel>
+</Window>
