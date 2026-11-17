@@ -5,6 +5,8 @@ Press **Sync** and every track of the playlist is downloaded as an audio file wi
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ffmpeg](https://ffmpeg.org). Tracks that disappear
 from the remote playlist are highlighted, never deleted automatically.
 
+![fg](https://github.com/timmy0811/PlaylistSync/blob/main/img/img.png)
+
 Runs on Linux (Arch is the primary target) and Windows. Built with C# / .NET 10 and Avalonia UI.
 
 ## Requirements
