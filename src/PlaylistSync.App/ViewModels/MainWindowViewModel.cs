@@ -42,7 +42,7 @@ public partial class MainWindowViewModel(
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
     [NotifyCanExecuteChangedFor(nameof(EditPlaylistCommand), nameof(RemovePlaylistCommand), nameof(OpenFolderCommand),
-        nameof(CopyUrlCommand), nameof(MoveUpCommand), nameof(MoveDownCommand), nameof(SyncCommand), nameof(CancelSyncCommand),
+        nameof(CopyUrlCommand), nameof(OpenUrlCommand), nameof(MoveUpCommand), nameof(MoveDownCommand), nameof(SyncCommand), nameof(CancelSyncCommand),
         nameof(DeleteRemovedFilesCommand), nameof(PlaylistSettingsCommand), nameof(PlayPlaylistCommand),
         nameof(ShufflePlaylistCommand))]
     private PlaylistItemViewModel? _selectedPlaylist;
@@ -241,6 +241,13 @@ public partial class MainWindowViewModel(
     {
         if (SelectedPlaylist is not { } item) return;
         await OpenPlaylistFolderAsync(item, subFolder: null);
+    }
+
+    [RelayCommand(CanExecute = nameof(HasSelection))]
+    private async Task OpenUrlAsync()
+    {
+        if (SelectedPlaylist is not { } item) return;
+        if (!await dialogs.OpenUriAsync(item.Url)) StatusText = "Could not open the playlist URL in a browser";
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]

@@ -125,6 +125,7 @@
                   <Button.Flyout>
                     <MenuFlyout Placement="BottomEdgeAlignedRight">
                       <MenuItem Header="Open folder" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}" />
+                      <MenuItem Header="Open in browser" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenUrlCommand}" />
                       <MenuItem Header="Copy URL" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyUrlCommand}" />
                       <MenuItem Header="Download settings…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlaylistSettingsCommand}" />
                       <Separator />
@@ -137,7 +138,11 @@
                 </Button>
               </StackPanel>
             </Grid>
-            <SelectableTextBlock Classes="muted" Text="{Binding Url}" TextTrimming="CharacterEllipsis" />
+            <Button Classes="link" HorizontalAlignment="Left" MaxWidth="420"
+                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenUrlCommand}"
+                    ToolTip.Tip="{Binding Url, StringFormat='Open in browser: {0}'}">
+              <TextBlock Classes="muted" Text="{Binding Url}" TextTrimming="CharacterEllipsis" />
+            </Button>
             <Button Classes="link" HorizontalAlignment="Left"
                     Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).OpenFolderCommand}"
                     ToolTip.Tip="Open in file manager">
