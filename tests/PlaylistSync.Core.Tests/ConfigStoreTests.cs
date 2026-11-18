@@ -28,6 +28,7 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.False(s.Download.WriteM3u);
         Assert.False(s.Download.TrackNumberPrefix);
         Assert.Equal(2, s.Concurrency);
+        Assert.Equal(1, s.VideoConcurrency);
     }
 
     [Fact]

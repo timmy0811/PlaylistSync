@@ -21,6 +21,8 @@ public sealed record DownloadRequest(
     /// <summary>1-based remote position, for the optional filename prefix.</summary>
     public int? TrackNumber { get; init; }
     public int TrackNumberWidth { get; init; } = 2;
+    /// <summary>Audio file (music playlist) or video file (video playlist).</summary>
+    public PlaylistKind Kind { get; init; } = PlaylistKind.Music;
     /// <summary>
     /// The video actually downloaded, when it differs from <see cref="VideoId"/> (a replacement for a gone video).
     /// Temp dir and file naming stay keyed by <see cref="VideoId"/>.
@@ -92,7 +94,7 @@ public sealed class YtDlpTrackDownloader(
         var keepThumbnail = thumbnails is not null && ffmpeg is not null;
         var args = YtDlpArgsBuilder.TrackDownload(request.EffectiveSourceId, tempDir, request.Options,
             request.Tools.Ffmpeg, request.Tools.JsRuntime, request.TrackNumber, request.TrackNumberWidth,
-            OperatingSystem.IsWindows(), keepThumbnail);
+            OperatingSystem.IsWindows(), keepThumbnail, request.Kind);
 
         string? finalPath = null;
         var throttle = new ProgressThrottle(progress);
@@ -153,7 +155,11 @@ public sealed class YtDlpTrackDownloader(
 
         // After the file is in place the track counts as done, so cancelling must not undo it: the thumbnail is
         // best effort with its own short timeout instead of the sync's token.
-        if (keepThumbnail) await thumbnails!.CreateFromTempDirAsync(request.VideoId, tempDir, ffmpeg!, CancellationToken.None).ConfigureAwait(false);
+        if (keepThumbnail)
+        {
+            await thumbnails!.CreateFromTempDirAsync(request.VideoId, tempDir, ffmpeg!, CancellationToken.None,
+                TrackThumbnails.ShapeFor(request.Kind)).ConfigureAwait(false);
+        }
 
         TryDeleteDirectory(tempDir);
         log.LogInformation("Downloaded {Id} → {File} in {Elapsed:0.0}s", request.VideoId, relative, result.Duration.TotalSeconds);

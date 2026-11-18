@@ -149,8 +149,11 @@ public class SettingsValidatorTests
     [InlineData(1, true)]
     [InlineData(SettingsValidator.MaxConcurrency, true)]
     [InlineData(SettingsValidator.MaxConcurrency + 1, false)]
-    public void Concurrency(int value, bool valid) =>
+    public void Concurrency(int value, bool valid)
+    {
         Assert.Equal(valid, SettingsValidator.ValidateApp(new AppSettings { Concurrency = value }).IsValid);
+        Assert.Equal(valid, SettingsValidator.ValidateApp(new AppSettings { VideoConcurrency = value }).IsValid);
+    }
 
     [Fact]
     public void Tool_paths_must_be_full_paths_or_empty()

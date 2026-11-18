@@ -1,5 +1,6 @@
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using PlaylistSync.App.Services;
 using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Models;
@@ -11,21 +12,43 @@ namespace PlaylistSync.App.ViewModels;
 
 public enum PlaylistHealth { NeverSynced, Ok, Attention, Error }
 
-/// <summary>One library entry in the sidebar and the detail header, with its track list and sync state.</summary>
-public sealed partial class PlaylistItemViewModel(PlaylistEntry entry, ITrackActions actions, CoverLoader covers) : ViewModelBase
+/// <summary>What a sidebar row's context menu can do (implemented by the main window view model).</summary>
+public interface IPlaylistActions
 {
+    Task MoveUpAsync(PlaylistItemViewModel item);
+    Task MoveDownAsync(PlaylistItemViewModel item);
+    Task ToggleHiddenAsync(PlaylistItemViewModel item);
+}
+
+/// <summary>One library entry in the sidebar and the detail header, with its track list and sync state.</summary>
+/// <param name="playlistActions">For the row's context menu; without it the menu does nothing.</param>
+public sealed partial class PlaylistItemViewModel(
+    PlaylistEntry entry, ITrackActions actions, CoverLoader covers, IPlaylistActions? playlistActions = null) : ViewModelBase
+{
+    [RelayCommand]
+    private Task MoveUpAsync() => playlistActions?.MoveUpAsync(this) ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task MoveDownAsync() => playlistActions?.MoveDownAsync(this) ?? Task.CompletedTask;
+
+    [RelayCommand]
+    private Task ToggleHiddenAsync() => playlistActions?.ToggleHiddenAsync(this) ?? Task.CompletedTask;
+
     private string? _coverUrl;
     private int _loadGeneration;
     private int _syncGeneration;
     private Manifest? _live;
     private int _toDownload;
 
-    public TrackListViewModel Tracks { get; } = new(actions);
+    public TrackListViewModel Tracks { get; } = new(actions) { IsVideo = entry.IsVideo };
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Name), nameof(Url), nameof(Directory), nameof(DisplayDirectory), nameof(LastSyncText),
-        nameof(HasCustomSettings), nameof(CustomSettingsText))]
+        nameof(HasCustomSettings), nameof(CustomSettingsText), nameof(IsHidden), nameof(Kind), nameof(IsVideo),
+        nameof(CoverGlyph), nameof(HideText))]
     private PlaylistEntry _entry = entry;
+
+    partial void OnEntryChanged(PlaylistEntry value) => Tracks.IsVideo = value.IsVideo;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CountText), nameof(SummaryText), nameof(Health), nameof(IsOk), nameof(NeedsAttention),
@@ -69,6 +92,12 @@ public sealed partial class PlaylistItemViewModel(PlaylistEntry entry, ITrackAct
     public bool HasCover => Cover is not null;
 
     public Guid Id => Entry.Id;
+    public PlaylistKind Kind => Entry.Kind;
+    public bool IsVideo => Entry.IsVideo;
+    public bool IsHidden => Entry.Hidden;
+    public string HideText => IsHidden ? "Show in the list" : "Hide from the list";
+    /// <summary>Placeholder while there is no cover.</summary>
+    public string CoverGlyph => IsVideo ? "▶" : "♪";
     public string Name => Entry.Name;
     public string Url => Entry.Url;
     public string Directory => Entry.Directory;
@@ -77,7 +106,7 @@ public sealed partial class PlaylistItemViewModel(PlaylistEntry entry, ITrackAct
 
     /// <summary>The playlist has its own download options instead of the global ones.</summary>
     public bool HasCustomSettings => Entry.Overrides is not null;
-    public string CustomSettingsText => Entry.Overrides is { } o ? "Own settings: " + DownloadOptionsViewModel.Describe(o) : "";
+    public string CustomSettingsText => Entry.Overrides is { } o ? "Own settings: " + DownloadOptionsViewModel.Describe(o, Entry.Kind) : "";
 
     public string CountText => Summary is { InPlaylist: > 0 } s ? s.InPlaylist.ToString(System.Globalization.CultureInfo.CurrentCulture) : "—";
 
@@ -113,13 +142,14 @@ public sealed partial class PlaylistItemViewModel(PlaylistEntry entry, ITrackAct
         if (IsSyncing) return;
         var generation = ++_loadGeneration;
         var address = Entry.Directory;
+        var kind = Entry.Kind;
         try
         {
             var (manifest, untracked) = await Task.Run(async () =>
             {
                 var dir = (await folders.ResolveAsync(address).ConfigureAwait(false)).Path;
                 var m = await manifests.LoadAsync(dir).ConfigureAwait(false);
-                return (m, SyncPlanner.FindUntracked(m, DiskSnapshot.Scan(dir)));
+                return (m, SyncPlanner.FindUntracked(m, DiskSnapshot.Scan(dir), kind));
             });
             if (generation != _loadGeneration || IsSyncing) return;
             Summary = ManifestSummary.From(manifest);

@@ -71,6 +71,18 @@ public sealed class PlaylistLibrary(ConfigStore store, ILogger<PlaylistLibrary> 
             list.Insert(Math.Clamp(newIndex, 0, list.Count), entry);
         }, ct);
 
+    /// <summary>
+    /// Puts the entries in <paramref name="order"/> into that order, keeping the slots of all other entries (playlists
+    /// of the other kind, hidden ones) where they are. See <see cref="LibraryOrder.Apply"/>.
+    /// </summary>
+    public Task ReorderAsync(IReadOnlyList<Guid> order, CancellationToken ct = default) =>
+        ChangeAsync(list =>
+        {
+            var next = LibraryOrder.Apply(list, order);
+            list.Clear();
+            list.AddRange(next);
+        }, ct);
+
     private async Task ChangeAsync(Action<List<PlaylistEntry>> change, CancellationToken ct)
     {
         await _lock.WaitAsync(ct).ConfigureAwait(false);
@@ -92,5 +104,26 @@ public sealed class PlaylistLibrary(ConfigStore store, ILogger<PlaylistLibrary> 
     {
         var i = list.FindIndex(p => p.Id == id);
         return i >= 0 ? i : throw new KeyNotFoundException($"No playlist with id {id}.");
+    }
+}
+
+/// <summary>Ordering of a subset of the library (the playlists the sidebar shows).</summary>
+public static class LibraryOrder
+{
+    /// <summary>
+    /// The entries whose ids are in <paramref name="order"/> take the positions those entries hold in
+    /// <paramref name="entries"/>, in the given order; every other entry stays at its index. Unknown and repeated ids
+    /// are ignored. Pure.
+    /// </summary>
+    public static List<PlaylistEntry> Apply(IReadOnlyList<PlaylistEntry> entries, IReadOnlyList<Guid> order)
+    {
+        var byId = entries.ToDictionary(e => e.Id);
+        var wanted = order.Distinct().Where(byId.ContainsKey).ToList();
+        var subset = wanted.ToHashSet();
+        var slots = entries.Select((e, i) => (e, i)).Where(x => subset.Contains(x.e.Id)).Select(x => x.i).ToList();
+
+        var result = entries.ToList();
+        for (var k = 0; k < slots.Count; k++) result[slots[k]] = byId[wanted[k]];
+        return result;
     }
 }

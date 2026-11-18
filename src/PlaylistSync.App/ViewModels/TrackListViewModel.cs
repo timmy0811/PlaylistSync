@@ -47,6 +47,12 @@ public sealed partial class TrackListViewModel : ViewModelBase
 
     public IReadOnlyList<FilterChipViewModel> Chips { get; }
 
+    /// <summary>The list belongs to a video playlist: 16:9 thumbnails.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(Glyph))] private bool _isVideo;
+
+    /// <summary>Thumbnail placeholder.</summary>
+    public string Glyph => IsVideo ? "▶" : "♪";
+
     private FilterChipViewModel _selectedChip;
 
     /// <summary>

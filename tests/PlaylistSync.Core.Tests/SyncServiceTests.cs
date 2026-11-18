@@ -314,6 +314,25 @@ public class SyncServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Video_playlists_use_their_own_parallel_download_count()
+    {
+        _source.Playlist = Remote(Enumerable.Range(0, 6).Select(i => T("v" + i, i)).ToArray());
+        int running = 0, max = 0;
+        _downloader.Before = async (_, ct) =>
+        {
+            var now = Interlocked.Increment(ref running);
+            InterlockedMax(ref max, now);
+            await Task.Delay(30, ct);
+            Interlocked.Decrement(ref running);
+        };
+
+        await Service().SyncAsync(Entry() with { Kind = PlaylistKind.Video }, new AppSettings { Concurrency = 4, VideoConcurrency = 1 }, ct: Ct);
+
+        Assert.Equal(1, max);
+        Assert.Equal(6, (await SavedManifest())!.Tracks.Values.Count(t => t.Status == TrackStatus.Synced));
+    }
+
+    [Fact]
     public async Task Writes_m3u_when_enabled()
     {
         _source.Playlist = Remote(T("a", 0), T("b", 1), T("c", 2));
@@ -590,6 +609,26 @@ public class SyncServiceTests : IDisposable
 
         Assert.Equal(CookieMode.Browser, _downloader.Calls.Single().Options.CookieMode);
         Assert.Equal(CookieMode.Browser, _source.LastContext!.Options.CookieMode);
+    }
+
+    // ---- video playlists ------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Video_playlist_downloads_videos_without_duplicate_skipping_or_replacements()
+    {
+        // The same song twice (artist, title, length) and one gone video: a music playlist would skip one and search.
+        _source.Playlist = Remote(new RemoteTrack("a", "Song", "Artist", 180, 0, null), new RemoteTrack("b", "Song", "Artist", 180, 1, null),
+            T("gone", 2));
+        OriginalIsGone();
+        _finder.Respond = _ => new ReplacementResult(ReplacementOutcome.Found, new Replacement("new", "T", "A", 180));
+
+        var result = await Service().SyncAsync(Entry() with { Kind = PlaylistKind.Video }, new AppSettings(), ct: Ct);
+
+        Assert.Equal(["a", "b", "gone"], _downloader.Calls.Select(r => r.VideoId).Order());
+        Assert.All(_downloader.Calls, r => Assert.Equal(PlaylistKind.Video, r.Kind));
+        Assert.Empty(_finder.Calls);
+        Assert.Equal((2, 1), (result.Downloaded, result.BecameUnavailable));
+        Assert.DoesNotContain((await SavedManifest())!.Tracks.Values, t => t.Status == TrackStatus.Duplicate);
     }
 
     private sealed class FakeSource : IPlaylistSource

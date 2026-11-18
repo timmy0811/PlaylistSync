@@ -8,6 +8,24 @@ public enum CookieMode { None, File, Browser }
 
 public enum ThemeMode { System, Light, Dark }
 
+/// <summary>What a playlist is downloaded as. Fixed when the playlist is added.</summary>
+public enum PlaylistKind
+{
+    /// <summary>Audio files (the default).</summary>
+    Music,
+    /// <summary>Video files.</summary>
+    Video,
+}
+
+/// <summary>Container of downloaded videos.</summary>
+public enum VideoContainer
+{
+    /// <summary>MP4, falling back to MKV when the streams don't fit into MP4. Plays everywhere.</summary>
+    Mp4,
+    /// <summary>MKV: holds any stream combination without re-encoding.</summary>
+    Mkv,
+}
+
 public enum TrackStatus
 {
     /// <summary>In the remote playlist, not downloaded yet.</summary>

@@ -29,11 +29,9 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
     private readonly IReadOnlyList<PlaylistEntry> _others;
     private readonly PlaylistEntry? _original;
     private readonly Func<PlaylistEntry, Task> _save;
-    private readonly Func<string, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? _createSettings;
+    private readonly Func<string, PlaylistKind, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? _createSettings;
     private readonly AppSettings _settings;
     private readonly string _home;
-    /// <summary>Where new playlist folders are suggested: the default folder from the settings, or Music.</summary>
-    private readonly string _baseDir;
 
     private CancellationTokenSource? _urlCheck;
     private CancellationTokenSource? _folderCheck;
@@ -52,7 +50,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         IReadOnlyList<PlaylistEntry> library,
         PlaylistEntry? original,
         Func<PlaylistEntry, Task> save,
-        Func<string, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? createSettings = null)
+        Func<string, PlaylistKind, DownloadOptions?, Func<DownloadOptions?, Task>, SettingsViewModel>? createSettings = null)
     {
         _createSettings = createSettings;
         _settings = settings;
@@ -67,10 +65,10 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         _original = original;
         _save = save;
         _home = PathUtil.Home;
-        _baseDir = PathUtil.BaseDirectory(settings.DefaultDirectory, _home, PathUtil.MusicDir);
 
         if (original is not null)
         {
+            _kind = original.Kind;
             _name = original.Name;
             _url = original.Url;
             _directory = original.Directory;
@@ -85,12 +83,48 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
 
     [ObservableProperty] private string _name = "";
 
+    /// <summary>Music (default) or video. Chosen when adding; fixed afterwards.</summary>
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsMusic), nameof(IsVideo), nameof(SettingsText))]
+    private PlaylistKind _kind = PlaylistKind.Music;
+
+    public bool IsMusic
+    {
+        get => Kind == PlaylistKind.Music;
+        set { if (value) Kind = PlaylistKind.Music; }
+    }
+
+    public bool IsVideo
+    {
+        get => Kind == PlaylistKind.Video;
+        set { if (value) Kind = PlaylistKind.Video; }
+    }
+
+    /// <summary>The type can only be chosen when adding: files already downloaded would not match a new type.</summary>
+    public bool CanChangeKind => !IsEditing;
+
+    public string KindHint => IsEditing
+        ? "The type can't be changed after adding. Remove the playlist and add it again in a new folder to switch."
+        : "Music saves audio files; Videos saves video files. Each type has its own list in the sidebar.";
+
+    /// <summary>Where new playlist folders are suggested: the default folder from the settings for this kind, or Music / Videos.</summary>
+    private string BaseDir => Kind == PlaylistKind.Video
+        ? PathUtil.BaseDirectory(_settings.DefaultVideoDirectory, _home, PathUtil.VideosDir)
+        : PathUtil.BaseDirectory(_settings.DefaultDirectory, _home, PathUtil.MusicDir);
+
+    partial void OnKindChanged(PlaylistKind value)
+    {
+        // Move a folder suggestion (not one the user typed) to the base folder of the new type.
+        if (IsEditing || _autoDirectory is null || Directory != _autoDirectory || _autoName is null) return;
+        _autoDirectory = UniqueFolder(Path.Combine(BaseDir, PathUtil.SafeFolderName(_autoName)));
+        Directory = _autoDirectory;
+    }
+
     /// <summary>The playlist's own download options; null = the global ones. Saved together with the entry.</summary>
     [ObservableProperty, NotifyPropertyChangedFor(nameof(SettingsText))] private DownloadOptions? _overrides;
 
     public string SettingsText => Overrides is { } o
-        ? "Own settings: " + DownloadOptionsViewModel.Describe(o)
-        : "Global settings (" + DownloadOptionsViewModel.Describe(_settings.Download) + ")";
+        ? "Own settings: " + DownloadOptionsViewModel.Describe(o, Kind)
+        : "Global settings (" + DownloadOptionsViewModel.Describe(_settings.Download, Kind) + ")";
 
     public bool CanEditSettings => _createSettings is not null;
     [ObservableProperty] private string _url = "";
@@ -144,7 +178,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         if (FolderResolver.IsRemote(start)) start = null; // the picker needs a local start folder
         while (start is not null && !System.IO.Directory.Exists(start))
             start = Path.GetDirectoryName(start);
-        var picked = await _dialogs.PickFolderAsync("Choose the folder for this playlist", start ?? _baseDir);
+        var picked = await _dialogs.PickFolderAsync("Choose the folder for this playlist", start ?? BaseDir);
         if (picked is not null) Directory = picked;
     }
 
@@ -154,7 +188,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         if (_createSettings is null) return;
         var title = string.IsNullOrWhiteSpace(Name) ? "new playlist" : Name.Trim();
         // Kept in the dialog until it is saved; Cancel here discards it again.
-        var vm = _createSettings(title, Overrides, o =>
+        var vm = _createSettings(title, Kind, Overrides, o =>
         {
             Overrides = o;
             return Task.CompletedTask;
@@ -183,6 +217,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
             Url = Url.Trim(),
             Directory = v.NormalizedDirectory!,
             Overrides = Overrides,
+            Kind = Kind,
         };
 
         IsSaving = true;
@@ -241,7 +276,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
 
             _fetchedPlaylistId = playlist.Id;
             var unavailable = playlist.Tracks.Count(t => !t.IsAvailable);
-            CheckText = $"✓ {playlist.Title ?? "Untitled playlist"} · {Tracks(playlist.Tracks.Count)}" +
+            CheckText = $"✓ {playlist.Title ?? "Untitled playlist"} · {Items(playlist.Tracks.Count)}" +
                         (unavailable > 0 ? $" ({unavailable} unavailable)" : "");
             ApplyFetchedTitle(playlist.Title);
             StartFolderCheck(immediately: true);
@@ -288,7 +323,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         }
         if (!IsEditing && (string.IsNullOrWhiteSpace(Directory) || Directory == _autoDirectory))
         {
-            _autoDirectory = UniqueFolder(Path.Combine(_baseDir, PathUtil.SafeFolderName(title)));
+            _autoDirectory = UniqueFolder(Path.Combine(BaseDir, PathUtil.SafeFolderName(title)));
             Directory = _autoDirectory;
         }
     }
@@ -361,5 +396,7 @@ public sealed partial class PlaylistEditorViewModel : ViewModelBase
         }
     }
 
-    private static string Tracks(int n) => n == 1 ? "1 track" : $"{n} tracks";
+    private string Items(int n) => Kind == PlaylistKind.Video
+        ? n == 1 ? "1 video" : $"{n} videos"
+        : n == 1 ? "1 track" : $"{n} tracks";
 }

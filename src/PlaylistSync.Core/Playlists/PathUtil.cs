@@ -1,4 +1,5 @@
 using PlaylistSync.Core.Locations;
+using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Sync;
 
 namespace PlaylistSync.Core.Playlists;
@@ -72,6 +73,19 @@ public static class PathUtil
             return string.IsNullOrEmpty(music) ? Path.Combine(Home, "Music") : music;
         }
     }
+
+    /// <summary>The system Videos folder (<c>~/Videos</c> when the OS does not report one).</summary>
+    public static string VideosDir
+    {
+        get
+        {
+            var videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+            return string.IsNullOrEmpty(videos) ? Path.Combine(Home, "Videos") : videos;
+        }
+    }
+
+    /// <summary>The system folder new playlists of <paramref name="kind"/> go into by default.</summary>
+    public static string DefaultDirFor(PlaylistKind kind) => kind == PlaylistKind.Video ? VideosDir : MusicDir;
 
     /// <summary>
     /// The folder new playlists go into: the configured default folder (see <c>AppSettings.DefaultDirectory</c>), or

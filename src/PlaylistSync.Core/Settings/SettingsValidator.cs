@@ -55,6 +55,12 @@ public static partial class SettingsValidator
 
         if (TemplateError(o.FilenameTemplate) is { } templateError)
             errors[nameof(o.FilenameTemplate)] = templateError;
+        if (TemplateError(o.VideoFilenameTemplate) is { } videoTemplateError)
+            errors[nameof(o.VideoFilenameTemplate)] = videoTemplateError;
+        if (o.VideoMaxHeight is < 144 or > 4320)
+            errors[nameof(o.VideoMaxHeight)] = "Choose a resolution from 144p to 4320p, or Best.";
+        if (o.EmbedSubtitles && !SubLangsRegex().IsMatch(o.SubtitleLanguages?.Trim() ?? ""))
+            errors[nameof(o.SubtitleLanguages)] = "List language codes separated by commas, e.g. en.*,de (or 'all').";
 
         if (o.EmbedThumbnail && o.Format == AudioFormat.Wav)
             warnings[nameof(o.EmbedThumbnail)] = "WAV files can't hold a cover, so none is embedded.";
@@ -108,9 +114,14 @@ public static partial class SettingsValidator
         var errors = new Dictionary<string, string>(StringComparer.Ordinal);
         if (s.Concurrency is < 1 or > MaxConcurrency)
             errors[nameof(s.Concurrency)] = $"Use 1 to {MaxConcurrency}.";
+        if (s.VideoConcurrency is < 1 or > MaxConcurrency)
+            errors[nameof(s.VideoConcurrency)] = $"Use 1 to {MaxConcurrency}.";
         if (!string.IsNullOrWhiteSpace(s.DefaultDirectory) &&
             PathUtil.NormalizeUserPath(s.DefaultDirectory, home ?? PathUtil.Home) is null)
             errors[nameof(s.DefaultDirectory)] = "Use a full path (~/… and smb://server/share/… work too), or leave it empty for the Music folder.";
+        if (!string.IsNullOrWhiteSpace(s.DefaultVideoDirectory) &&
+            PathUtil.NormalizeUserPath(s.DefaultVideoDirectory, home ?? PathUtil.Home) is null)
+            errors[nameof(s.DefaultVideoDirectory)] = "Use a full path (~/… and smb://server/share/… work too), or leave it empty for the Videos folder.";
         Tool(nameof(ToolSettings.YtDlpPath), s.Tools.YtDlpPath);
         Tool(nameof(ToolSettings.FfmpegPath), s.Tools.FfmpegPath);
         Tool(nameof(ToolSettings.JsRuntimePath), s.Tools.JsRuntimePath);
@@ -166,4 +177,8 @@ public static partial class SettingsValidator
 
     [GeneratedRegex(@"^\d+(\.\d+)?\s*([kmgt]i?)?b?$", RegexOptions.IgnoreCase)]
     private static partial Regex RateRegex();
+
+    /// <summary>yt-dlp <c>--sub-langs</c>: comma-separated codes or regexes (<c>en.*</c>), optionally negated (<c>-live_chat</c>).</summary>
+    [GeneratedRegex(@"^-?[A-Za-z0-9_.*+\-]+(,-?[A-Za-z0-9_.*+\-]+)*$")]
+    private static partial Regex SubLangsRegex();
 }

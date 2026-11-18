@@ -135,6 +135,13 @@
     <Setter Property="Height" Value="96" />
     <Setter Property="CornerRadius" Value="6" />
   </Style>
+  <!-- Video playlists: 16:9 covers and thumbnails -->
+  <Style Selector="Border.cover.small.wide">
+    <Setter Property="Width" Value="60" />
+  </Style>
+  <Style Selector="Border.cover.large.wide">
+    <Setter Property="Width" Value="171" />
+  </Style>
   <Style Selector="TextBlock.cover-placeholder">
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="VerticalAlignment" Value="Center" />
@@ -257,5 +264,39 @@
   </Style>
   <Style Selector="Border.label.failed TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}" />
+  </Style>
+
+  <!-- Music / Videos switch in the sidebar -->
+  <Style Selector="Border.segmented">
+    <Setter Property="Background" Value="{DynamicResource DividerBrush}" />
+    <Setter Property="CornerRadius" Value="6" />
+    <Setter Property="Padding" Value="3" />
+  </Style>
+  <Style Selector="RadioButton.segment">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" CornerRadius="4" Padding="0,5">
+          <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center"
+                            Foreground="{TemplateBinding Foreground}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="RadioButton.segment:pointerover">
+    <Setter Property="Background" Value="{DynamicResource SidebarBrush}" />
+  </Style>
+  <Style Selector="RadioButton.segment:checked">
+    <Setter Property="Background" Value="{DynamicResource SystemControlHighlightAccentBrush}" />
+    <Setter Property="Foreground" Value="White" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+
+  <!-- Hidden playlists, listed while "Show hidden" is on -->
+  <Style Selector="Grid.dimmed">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
 </Styles>

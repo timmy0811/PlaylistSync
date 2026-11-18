@@ -9,13 +9,20 @@ public sealed record AppSettings
     public UiSettings Ui { get; init; } = new();
     public PlaybackSettings Playback { get; init; } = new();
     public ToolboxSettings Toolbox { get; init; } = new();
-    /// <summary>How many tracks download in parallel within one playlist sync.</summary>
+    /// <summary>How many tracks of a music playlist download in parallel within one sync.</summary>
     public int Concurrency { get; init; } = 2;
+    /// <summary>How many videos of a video playlist download in parallel within one sync (videos are large; default 1).</summary>
+    public int VideoConcurrency { get; init; } = 1;
+
+    /// <summary>The parallel downloads for a playlist of <paramref name="kind"/>.</summary>
+    public int ConcurrencyFor(PlaylistKind kind) => kind == PlaylistKind.Video ? VideoConcurrency : Concurrency;
     /// <summary>
     /// Base folder for new playlists: the suggested folder is <c>&lt;DefaultDirectory&gt;/&lt;playlist title&gt;</c>.
     /// A leading <c>~</c> means the home folder. Null = the system Music folder.
     /// </summary>
     public string? DefaultDirectory { get; init; }
+    /// <summary>Like <see cref="DefaultDirectory"/>, for video playlists. Null = the system Videos folder.</summary>
+    public string? DefaultVideoDirectory { get; init; }
 }
 
 public sealed record ToolSettings
@@ -32,6 +39,10 @@ public sealed record UiSettings
     public LogLevel LogLevel { get; init; } = LogLevel.Information;
     public double? WindowWidth { get; init; }
     public double? WindowHeight { get; init; }
+    /// <summary>Which playlists the sidebar shows (music or video), remembered across restarts.</summary>
+    public PlaylistKind SidebarKind { get; init; } = PlaylistKind.Music;
+    /// <summary>The sidebar also lists hidden playlists (dimmed).</summary>
+    public bool ShowHidden { get; init; }
 }
 
 /// <summary>Which program Play / Shuffle open tracks with. Both null = the system default for each file type.</summary>

@@ -14,6 +14,15 @@ public sealed record DownloadOptions
     /// <summary>Bitrate in kbps, used with <see cref="QualityMode.Cbr"/>.</summary>
     public int CbrKbps { get; init; } = 320;
 
+    // Video (video playlists only)
+    /// <summary>Preferred maximum video height (e.g. 1080); null = best available. A sort, not a filter: falls back to the closest.</summary>
+    public int? VideoMaxHeight { get; init; } = 1080;
+    public VideoContainer VideoContainer { get; init; } = VideoContainer.Mp4;
+    public bool EmbedSubtitles { get; init; }
+    /// <summary>yt-dlp <c>--sub-langs</c> value, e.g. <c>en.*,de</c>.</summary>
+    public string SubtitleLanguages { get; init; } = DefaultSubtitleLanguages;
+    public string VideoFilenameTemplate { get; init; } = DefaultVideoFilenameTemplate;
+
     // Metadata
     public bool EmbedMetadata { get; init; } = true;
     public bool EmbedThumbnail { get; init; } = true;
@@ -55,6 +64,17 @@ public sealed record DownloadOptions
     public string? ExtraArgs { get; init; }
 
     public const string DefaultFilenameTemplate = "%(artist,uploader)s - %(title)s.%(ext)s";
+    public const string DefaultVideoFilenameTemplate = "%(title)s.%(ext)s";
+    public const string DefaultSubtitleLanguages = "en.*";
+
+    /// <summary>The filename template for <paramref name="kind"/> (the default one when empty).</summary>
+    public string TemplateFor(PlaylistKind kind)
+    {
+        var (t, fallback) = kind == PlaylistKind.Video
+            ? (VideoFilenameTemplate, DefaultVideoFilenameTemplate)
+            : (FilenameTemplate, DefaultFilenameTemplate);
+        return string.IsNullOrWhiteSpace(t) ? fallback : t.Trim();
+    }
 
     /// <summary>
     /// The options a playlist syncs with: its override if it has one, else the global options. Cookies, proxy and the

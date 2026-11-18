@@ -93,9 +93,9 @@ public static class YtDlpArgsBuilder
         "%(artist&ARTIST-KNOWN|)s%(title)s:^(?!ARTIST-KNOWN)(?P<artist>.+?) - (?P<title>.+)$";
 
     /// <summary>
-    /// Downloads one video as an audio file into <paramref name="outputDirectory"/> (a per-track temp dir;
-    /// the caller moves the result into the playlist folder). Progress and the final path are printed with the
-    /// markers <see cref="DownloadOutputParser"/> understands.
+    /// Downloads one video into <paramref name="outputDirectory"/> (a per-track temp dir; the caller moves the result
+    /// into the playlist folder): as an audio file for a music playlist, as a video file for a video playlist.
+    /// Progress and the final path are printed with the markers <see cref="DownloadOutputParser"/> understands.
     /// </summary>
     /// <param name="trackNumber">1-based number for the filename prefix; only used with <see cref="DownloadOptions.TrackNumberPrefix"/>.</param>
     public static IReadOnlyList<string> TrackDownload(
@@ -105,8 +105,10 @@ public static class YtDlpArgsBuilder
         ToolLocation? ffmpeg,
         ToolLocation? jsRuntime,
         int? trackNumber = null,
-        int trackNumberWidth = 2) =>
-        TrackDownload(videoId, outputDirectory, o, ffmpeg, jsRuntime, trackNumber, trackNumberWidth, OperatingSystem.IsWindows());
+        int trackNumberWidth = 2,
+        PlaylistKind kind = PlaylistKind.Music) =>
+        TrackDownload(videoId, outputDirectory, o, ffmpeg, jsRuntime, trackNumber, trackNumberWidth, OperatingSystem.IsWindows(),
+            kind: kind);
 
     /// <param name="keepThumbnail">
     /// Also save the video thumbnail as <c>thumbnail.&lt;ext&gt;</c> in <paramref name="outputDirectory"/> (for the track
@@ -121,7 +123,8 @@ public static class YtDlpArgsBuilder
         int? trackNumber,
         int trackNumberWidth,
         bool isWindows,
-        bool keepThumbnail = false)
+        bool keepThumbnail = false,
+        PlaylistKind kind = PlaylistKind.Music)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(videoId);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputDirectory);
@@ -138,20 +141,29 @@ public static class YtDlpArgsBuilder
             "--print", "after_move:" + DownloadOutputParser.FileMarker + "%(filepath)s",
             // Players sort by date added; the upload date as mtime would scatter new tracks.
             "--no-mtime",
-            "-f", "bestaudio/best",
-            "-x",
         };
+        var video = kind == PlaylistKind.Video;
 
-        if (o.Format != AudioFormat.Best)
+        if (video)
         {
-            args.Add("--audio-format");
-            args.Add(FormatName(o.Format));
-            if (o.Format is not (AudioFormat.Flac or AudioFormat.Wav))
+            AddVideoFormat(args, o.VideoMaxHeight, o.VideoContainer);
+        }
+        else
+        {
+            args.Add("-f");
+            args.Add("bestaudio/best");
+            args.Add("-x");
+            if (o.Format != AudioFormat.Best)
             {
-                args.Add("--audio-quality");
-                args.Add(o.QualityMode == QualityMode.Cbr
-                    ? $"{Math.Clamp(o.CbrKbps, 32, 320)}K"
-                    : Math.Clamp(o.VbrLevel, 0, 10).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                args.Add("--audio-format");
+                args.Add(FormatName(o.Format));
+                if (o.Format is not (AudioFormat.Flac or AudioFormat.Wav))
+                {
+                    args.Add("--audio-quality");
+                    args.Add(o.QualityMode == QualityMode.Cbr
+                        ? $"{Math.Clamp(o.CbrKbps, 32, 320)}K"
+                        : Math.Clamp(o.VbrLevel, 0, 10).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
             }
         }
 
@@ -161,18 +173,18 @@ public static class YtDlpArgsBuilder
             args.Add(ffmpeg.Path);
         }
 
-        // Metadata
-        if (o.ParseArtistTitle)
+        // Metadata. Splitting "Artist - Title", the square cover and SponsorBlock's music category are for music only.
+        if (o.ParseArtistTitle && !video)
         {
             args.Add("--parse-metadata");
             args.Add(ParseArtistTitleArgs);
         }
         args.Add(o.EmbedMetadata ? "--embed-metadata" : "--no-embed-metadata");
         // WAV can't carry a cover; yt-dlp would fail the whole download.
-        if (o.EmbedThumbnail && o.Format != AudioFormat.Wav)
+        if (o.EmbedThumbnail && (video || o.Format != AudioFormat.Wav))
         {
             args.Add("--embed-thumbnail");
-            if (o.CropThumbnailSquare)
+            if (o.CropThumbnailSquare && !video)
             {
                 args.Add("--convert-thumbnails");
                 args.Add("jpg");
@@ -181,7 +193,13 @@ public static class YtDlpArgsBuilder
             }
         }
         args.Add(o.EmbedChapters ? "--embed-chapters" : "--no-embed-chapters");
-        if (o.SponsorBlockRemoveOfftopic)
+        if (video && o.EmbedSubtitles)
+        {
+            args.Add("--embed-subs");
+            args.Add("--sub-langs");
+            args.Add(string.IsNullOrWhiteSpace(o.SubtitleLanguages) ? DownloadOptions.DefaultSubtitleLanguages : o.SubtitleLanguages.Trim());
+        }
+        if (o.SponsorBlockRemoveOfftopic && !video)
         {
             args.Add("--sponsorblock-remove");
             args.Add("music_offtopic");
@@ -193,7 +211,7 @@ public static class YtDlpArgsBuilder
         args.Add("-P");
         args.Add(outputDirectory);
         args.Add("-o");
-        args.Add(OutputTemplate(o, o.TrackNumberPrefix ? trackNumber : null, trackNumberWidth));
+        args.Add(OutputTemplate(o, o.TrackNumberPrefix ? trackNumber : null, trackNumberWidth, kind));
         if (keepThumbnail)
         {
             // With --embed-thumbnail too, yt-dlp keeps the (converted, cropped) file instead of deleting it after embedding.
@@ -288,16 +306,7 @@ public static class YtDlpArgsBuilder
         }
         else
         {
-            args.Add("-f");
-            args.Add("bv*+ba/b");
-            // Sort, not filter: prefer the highest resolution up to the limit (falls back to the closest if none fits),
-            // then MP4/M4A for player compatibility.
-            args.Add("-S");
-            args.Add(spec.MaxHeight is { } h
-                ? $"res:{h.ToString(System.Globalization.CultureInfo.InvariantCulture)},ext:mp4:m4a"
-                : "ext:mp4:m4a");
-            args.Add("--merge-output-format");
-            args.Add("mp4/mkv");
+            AddVideoFormat(args, spec.MaxHeight, VideoContainer.Mp4);
             template = SingleVideoFilenameTemplate;
             canEmbedThumbnail = true;
         }
@@ -349,10 +358,32 @@ public static class YtDlpArgsBuilder
         return args;
     }
 
-    /// <summary>The filename template, with the track number put in front of the file name (not of a folder in it).</summary>
-    internal static string OutputTemplate(DownloadOptions o, int? trackNumber, int width)
+    /// <summary>
+    /// Best video + best audio, merged. Sort, not filter: prefers the highest resolution up to
+    /// <paramref name="maxHeight"/> (falls back to the closest if none fits). For MP4 also MP4/M4A streams, so they can be
+    /// merged without re-encoding; MKV falls back from MP4 when the streams don't fit.
+    /// </summary>
+    internal static void AddVideoFormat(List<string> args, int? maxHeight, VideoContainer container)
     {
-        var template = string.IsNullOrWhiteSpace(o.FilenameTemplate) ? DownloadOptions.DefaultFilenameTemplate : o.FilenameTemplate.Trim();
+        var sort = new List<string>();
+        if (maxHeight is { } h and > 0) sort.Add("res:" + h.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (container == VideoContainer.Mp4) sort.Add("ext:mp4:m4a");
+
+        args.Add("-f");
+        args.Add("bv*+ba/b");
+        if (sort.Count > 0)
+        {
+            args.Add("-S");
+            args.Add(string.Join(',', sort));
+        }
+        args.Add("--merge-output-format");
+        args.Add(container == VideoContainer.Mkv ? "mkv" : "mp4/mkv");
+    }
+
+    /// <summary>The filename template, with the track number put in front of the file name (not of a folder in it).</summary>
+    internal static string OutputTemplate(DownloadOptions o, int? trackNumber, int width, PlaylistKind kind = PlaylistKind.Music)
+    {
+        var template = o.TemplateFor(kind);
         if (trackNumber is not { } n) return template;
 
         var prefix = n.ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(Math.Max(1, width), '0')

@@ -27,6 +27,24 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
 
     public static readonly IReadOnlyList<int> Bitrates = [96, 128, 160, 192, 256, 320];
 
+    /// <summary>Maximum video resolutions; 0 = best available (stored as null).</summary>
+    public static readonly IReadOnlyList<Choice<int>> VideoHeights =
+    [
+        new(0, "Best available"),
+        new(2160, "2160p (4K)"),
+        new(1440, "1440p"),
+        new(1080, "1080p (Full HD)"),
+        new(720, "720p"),
+        new(480, "480p"),
+        new(360, "360p"),
+    ];
+
+    public static readonly IReadOnlyList<Choice<VideoContainer>> Containers =
+    [
+        new(VideoContainer.Mp4, "MP4 (plays everywhere)"),
+        new(VideoContainer.Mkv, "MKV (any streams, no re-encoding)"),
+    ];
+
     public static readonly IReadOnlyList<Choice<CookieMode>> CookieModes =
     [
         new(CookieMode.None, "No cookies"),
@@ -74,6 +92,13 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
         _ => "VBR 0 is the best quality. Converting can't add quality the source doesn't have.",
     };
 
+    // Video
+    [ObservableProperty] private Choice<int> _videoHeight = VideoHeights[3];
+    [ObservableProperty] private Choice<VideoContainer> _selectedContainer = Containers[0];
+    [ObservableProperty] private bool _embedSubtitles;
+    [ObservableProperty] private string _subtitleLanguages = DownloadOptions.DefaultSubtitleLanguages;
+    [ObservableProperty] private string _videoFilenameTemplate = "";
+
     // Metadata
     [ObservableProperty] private bool _embedMetadata;
     [ObservableProperty, NotifyPropertyChangedFor(nameof(CoverHint))] private bool _embedThumbnail;
@@ -115,6 +140,8 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
     // Validation
     [ObservableProperty] private string? _vbrLevelError;
     [ObservableProperty] private string? _filenameTemplateError;
+    [ObservableProperty] private string? _videoFilenameTemplateError;
+    [ObservableProperty] private string? _subtitleLanguagesError;
     [ObservableProperty] private string? _cookiesFileError;
     [ObservableProperty] private string? _cookiesBrowserError;
     [ObservableProperty] private string? _proxyError;
@@ -140,6 +167,15 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
             IsVbr = o.QualityMode == QualityMode.Vbr;
             VbrLevel = o.VbrLevel;
             CbrKbps = Bitrates.Contains(o.CbrKbps) ? o.CbrKbps : Bitrates.MinBy(b => Math.Abs(b - o.CbrKbps));
+            VideoHeight = o.VideoMaxHeight is { } h
+                ? VideoHeights.Where(c => c.Value > 0).MinBy(c => Math.Abs(c.Value - h))!
+                : VideoHeights[0];
+            SelectedContainer = Containers.FirstOrDefault(c => c.Value == o.VideoContainer) ?? Containers[0];
+            EmbedSubtitles = o.EmbedSubtitles;
+            SubtitleLanguages = string.IsNullOrWhiteSpace(o.SubtitleLanguages) ? DownloadOptions.DefaultSubtitleLanguages : o.SubtitleLanguages;
+            VideoFilenameTemplate = string.IsNullOrWhiteSpace(o.VideoFilenameTemplate)
+                ? DownloadOptions.DefaultVideoFilenameTemplate
+                : o.VideoFilenameTemplate;
             EmbedMetadata = o.EmbedMetadata;
             EmbedThumbnail = o.EmbedThumbnail;
             CropThumbnailSquare = o.CropThumbnailSquare;
@@ -177,6 +213,13 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
         QualityMode = IsVbr ? QualityMode.Vbr : QualityMode.Cbr,
         VbrLevel = ToInt(VbrLevel, -1),
         CbrKbps = CbrKbps,
+        VideoMaxHeight = VideoHeight.Value > 0 ? VideoHeight.Value : null,
+        VideoContainer = SelectedContainer.Value,
+        EmbedSubtitles = EmbedSubtitles,
+        SubtitleLanguages = string.IsNullOrWhiteSpace(SubtitleLanguages) ? DownloadOptions.DefaultSubtitleLanguages : SubtitleLanguages.Trim(),
+        VideoFilenameTemplate = string.IsNullOrWhiteSpace(VideoFilenameTemplate)
+            ? DownloadOptions.DefaultVideoFilenameTemplate
+            : VideoFilenameTemplate.Trim(),
         EmbedMetadata = EmbedMetadata,
         EmbedThumbnail = EmbedThumbnail,
         CropThumbnailSquare = CropThumbnailSquare,
@@ -206,6 +249,9 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
     private void ResetTemplate() => FilenameTemplate = DownloadOptions.DefaultFilenameTemplate;
 
     [RelayCommand]
+    private void ResetVideoTemplate() => VideoFilenameTemplate = DownloadOptions.DefaultVideoFilenameTemplate;
+
+    [RelayCommand]
     private async Task BrowseCookiesFileAsync()
     {
         var start = string.IsNullOrWhiteSpace(CookiesFile) ? null : Path.GetDirectoryName(CookiesFile.Trim());
@@ -232,6 +278,8 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
         // Empty number boxes become -1 above, which the range checks report.
         VbrLevelError = v.Error(nameof(DownloadOptions.VbrLevel));
         FilenameTemplateError = v.Error(nameof(DownloadOptions.FilenameTemplate));
+        VideoFilenameTemplateError = v.Error(nameof(DownloadOptions.VideoFilenameTemplate));
+        SubtitleLanguagesError = v.Error(nameof(DownloadOptions.SubtitleLanguages));
         CookiesFileError = v.Error(nameof(DownloadOptions.CookiesFile));
         CookiesBrowserError = v.Error(nameof(DownloadOptions.CookiesBrowser));
         ProxyError = v.Error(nameof(DownloadOptions.Proxy));
@@ -252,9 +300,16 @@ public sealed partial class DownloadOptionsViewModel : ViewModelBase
 
     private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
-    /// <summary>Short description for the playlist editor, e.g. "Opus · VBR 0" or "FLAC".</summary>
-    public static string Describe(DownloadOptions o)
+    /// <summary>Short description for the playlist editor, e.g. "Opus · VBR 0", "FLAC" or "MP4 · up to 1080p".</summary>
+    public static string Describe(DownloadOptions o, PlaylistKind kind = PlaylistKind.Music)
     {
+        if (kind == PlaylistKind.Video)
+        {
+            var container = o.VideoContainer == VideoContainer.Mkv ? "MKV" : "MP4";
+            return o.VideoMaxHeight is { } h
+                ? $"{container} · up to {h.ToString(CultureInfo.InvariantCulture)}p"
+                : $"{container} · best quality";
+        }
         var format = Formats.FirstOrDefault(f => f.Value == o.Format)?.Label.Split(' ')[0] ?? o.Format.ToString();
         if (o.Format is AudioFormat.Flac or AudioFormat.Wav or AudioFormat.Best) return format;
         return o.QualityMode == QualityMode.Vbr

@@ -20,6 +20,8 @@ remotely are **highlighted only, never deleted automatically**. There is no auto
 | yt-dlp / ffmpeg | ✅ Use the binaries on PATH. If missing, offer to download them into the app data dir. "Update yt-dlp" button (only for app-managed binaries; a pacman install stays pacman's job) |
 | Persistence | JSON files (no DB needed): global app config + one manifest per synced directory |
 | Network folders | ✅ A playlist folder can be a network address (`smb://[user@]server/share/folder`; also `sftp://`, `ftp://`, `webdav(s)://`). The library stores the **address** (mount paths change between sessions); `FolderResolver` mounts it on demand through **kio-fuse** (D-Bus `org.kde.KIOFuse`, KDE) or **gvfs** (`gio mount`/`gio info`, GNOME), with the desktop's own credential store. Windows: SMB → UNC path. Downloads for a network folder run in a local temp dir; only the finished file is copied over |
+| Playlist kinds | ✅ Each playlist is **Music** (audio files, the default) or **Video** (video files), chosen when adding and fixed afterwards (`PlaylistEntry.Kind`). The sidebar shows one kind at a time (Music / Videos switch, remembered in `UiSettings.SidebarKind`). Video playlists: 16:9 covers and track thumbnails, own options (max resolution, MP4/MKV, subtitles, filename template) in Settings → Video with the usual per-playlist override, default folder = Videos. Parallel downloads are set separately per kind (`AppSettings.Concurrency` for music, default 2; `VideoConcurrency`, default 1). Music-only features (artist/title split, square cover, duplicate skipping, replacements, SponsorBlock music_offtopic) are off for video playlists |
+| Sidebar order / hiding | ✅ Manual order by drag & drop (plus Move up/down); only the shown playlists swap places, the others keep their slots (`LibraryOrder.Apply`). A playlist can be hidden (`PlaylistEntry.Hidden`); "Show hidden" lists hidden ones dimmed to show them again. "Sync all" syncs the shown kind and skips hidden playlists |
 | Theme | Avalonia Fluent theme, light/dark/system, a single accent colour, compact density |
 | Packaging | `dotnet publish` self-contained single-file (`linux-x64`, `win-x64`). AppImage + PKGBUILD (AUR) for Linux, zip (later an installer) for Windows |
 
@@ -348,3 +350,8 @@ Per-playlist overrides: a playlist either follows the global settings or has its
   against `[A-Za-z0-9_-]` before becoming file names or URLs (manifests are user files). Rows being downloaded are
   skipped. Checked live (embedded cover, file without cover → YouTube, 404 for a missing video) and under Xvfb with a
   folder of thumbnail-less tracks. 8 new test cases (613 total)
+- [x] Video playlists (Music / Videos kinds), sidebar switch, drag & drop order, hidden playlists (see §2). Video downloads:
+  `bv*+ba/b`, `-S res:<h>,ext:mp4:m4a`, `--merge-output-format mp4/mkv` (or `mkv`), optional `--embed-subs --sub-langs`.
+  Wide track thumbnails are stored as `<data>/thumbnails/<id>.wide.jpg` (170×96) next to the square ones; video files are
+  not looked into for a backfill (YouTube image only). Old library/settings files load as music, visible. Checked in the
+  running app (switch, 16:9 covers, show hidden, add dialog, drag & drop saving). 14 new test cases (628 total)

@@ -46,7 +46,7 @@
       </StackPanel>
     </Border>
 
-    <TabControl TabStripPlacement="Left" Padding="0" Margin="8,8,0,0">
+    <TabControl TabStripPlacement="Left" Padding="0" Margin="8,8,0,0" SelectedIndex="{Binding InitialTab, Mode=OneTime}">
       <TabControl.Styles>
         <Style Selector="TabItem">
           <Setter Property="FontSize" Value="14" />
@@ -56,7 +56,7 @@
       </TabControl.Styles>
 
       <!-- ───────────── Audio ───────────── -->
-      <TabItem Header="Audio">
+      <TabItem Header="Audio" IsVisible="{Binding ShowMusicOptions}">
         <ScrollViewer>
           <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
                       IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
@@ -87,6 +87,54 @@
         </ScrollViewer>
       </TabItem>
 
+      <!-- ───────────── Video ───────────── -->
+      <TabItem Header="Video" IsVisible="{Binding ShowVideoOptions}">
+        <ScrollViewer>
+          <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
+                      IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
+            <TextBlock Classes="h2" Text="Video" />
+            <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                       Text="Used by video playlists. Music playlists use the Audio tab." />
+            <StackPanel Classes="field">
+              <TextBlock Text="Maximum resolution" />
+              <ComboBox Width="280" ItemsSource="{x:Static vm:DownloadOptionsViewModel.VideoHeights}" SelectedItem="{Binding VideoHeight}" />
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="The best quality up to this resolution. A video that has none that fits is downloaded in the closest one." />
+            </StackPanel>
+            <StackPanel Classes="field">
+              <TextBlock Text="Container" />
+              <ComboBox Width="280" ItemsSource="{x:Static vm:DownloadOptionsViewModel.Containers}" SelectedItem="{Binding SelectedContainer}" />
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="MP4 prefers MP4-compatible streams and falls back to MKV when a video has none. Nothing is re-encoded." />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="Subtitles" />
+            <StackPanel Classes="field">
+              <CheckBox Content="Embed subtitles" IsChecked="{Binding EmbedSubtitles}" />
+              <TextBox Width="280" HorizontalAlignment="Left" Text="{Binding SubtitleLanguages}" IsEnabled="{Binding EmbedSubtitles}"
+                       PlaceholderText="en.*" Margin="28,0,0,0" />
+              <TextBlock Classes="error hint" Text="{Binding SubtitleLanguagesError}" Margin="28,0,0,0"
+                         IsVisible="{Binding SubtitleLanguagesError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" Margin="28,0,0,0" TextWrapping="Wrap"
+                         Text="Language codes separated by commas; .* matches variants (en.* = en, en-US, …), all = every language. Only subtitles the uploader added." />
+            </StackPanel>
+
+            <TextBlock Classes="h2" Text="File names" />
+            <StackPanel Classes="field">
+              <TextBlock Text="Name template" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding VideoFilenameTemplate}" FontFamily="monospace" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Default" Command="{Binding ResetVideoTemplateCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding VideoFilenameTemplateError}"
+                         IsVisible="{Binding VideoFilenameTemplateError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="yt-dlp output template. Useful fields: %(title)s, %(uploader)s, %(upload_date)s, %(id)s. / makes sub-folders." />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <!-- ───────────── Metadata ───────────── -->
       <TabItem Header="Metadata">
         <ScrollViewer>
@@ -95,20 +143,24 @@
             <TextBlock Classes="h2" Text="Tags" />
             <StackPanel Classes="field">
               <CheckBox Content="Write tags (title, artist, album, date…)" IsChecked="{Binding EmbedMetadata}" />
-              <CheckBox Content="Split &quot;Artist - Title&quot; video titles into artist and title" IsChecked="{Binding ParseArtistTitle}"
-                        IsEnabled="{Binding EmbedMetadata}" />
-              <TextBlock Classes="muted hint" Margin="28,0,0,0"
-                         Text="Only when YouTube doesn't know the artist. YouTube Music tracks already come with artist and album." />
+              <StackPanel Spacing="6" IsVisible="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).ShowMusicOptions}">
+                <CheckBox Content="Split &quot;Artist - Title&quot; video titles into artist and title (music)" IsChecked="{Binding ParseArtistTitle}"
+                          IsEnabled="{Binding EmbedMetadata}" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                           Text="Only when YouTube doesn't know the artist. YouTube Music tracks already come with artist and album." />
+              </StackPanel>
               <CheckBox Content="Embed chapters" IsChecked="{Binding EmbedChapters}" />
             </StackPanel>
 
             <TextBlock Classes="h2" Text="Cover" />
             <StackPanel Classes="field">
               <CheckBox Content="Embed the video thumbnail as cover art" IsChecked="{Binding EmbedThumbnail}" />
-              <CheckBox Content="Crop it to a square" IsChecked="{Binding CropThumbnailSquare}" IsEnabled="{Binding EmbedThumbnail}"
-                        Margin="28,0,0,0" />
-              <TextBlock Classes="muted hint" Margin="28,0,0,0"
-                         Text="YouTube thumbnails are 16:9; music players show covers as squares." />
+              <StackPanel Spacing="6" IsVisible="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).ShowMusicOptions}">
+                <CheckBox Content="Crop it to a square (music)" IsChecked="{Binding CropThumbnailSquare}" IsEnabled="{Binding EmbedThumbnail}"
+                          Margin="28,0,0,0" />
+                <TextBlock Classes="muted hint" Margin="28,0,0,0"
+                           Text="YouTube thumbnails are 16:9; music players show covers as squares. Videos keep 16:9." />
+              </StackPanel>
               <TextBlock Classes="warning hint" Text="{Binding CoverHint}"
                          IsVisible="{Binding CoverHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
@@ -122,8 +174,8 @@
           <StackPanel Classes="page" DataContext="{Binding Download}" x:DataType="vm:DownloadOptionsViewModel"
                       IsEnabled="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).IsOptionsEditable}">
             <TextBlock Classes="h2" Text="File names" />
-            <StackPanel Classes="field">
-              <TextBlock Text="Name template" />
+            <StackPanel Classes="field" IsVisible="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).ShowMusicOptions}">
+              <TextBlock Text="Name template (music)" />
               <Grid ColumnDefinitions="*,Auto">
                 <TextBox Text="{Binding FilenameTemplate}" FontFamily="monospace" />
                 <Button Grid.Column="1" Margin="6,0,0,0" Content="Default" Command="{Binding ResetTemplateCommand}" />
@@ -226,15 +278,17 @@
               <StackPanel Classes="field">
                 <CheckBox Content="Download tracks again when their file was deleted" IsChecked="{Binding RedownloadMissing}" />
                 <TextBlock Classes="muted hint" Margin="28,0,0,0" Text="When off, they are listed as missing instead." />
-                <CheckBox Content="Skip duplicate tracks" IsChecked="{Binding SkipDuplicates}" />
+                <StackPanel Spacing="6" IsVisible="{Binding $parent[Window].((vm:SettingsViewModel)DataContext).ShowMusicOptions}">
+                <CheckBox Content="Skip duplicate tracks (music)" IsChecked="{Binding SkipDuplicates}" />
                 <TextBlock Classes="muted hint" Margin="28,0,0,0" TextWrapping="Wrap"
                            Text="When the same song (same artist, title and length) is in the playlist under several videos, for example the album track and the music video, download it only once. The others are listed as duplicates." />
-                <CheckBox Content="Find a replacement for unavailable tracks" IsChecked="{Binding FindReplacements}" />
+                <CheckBox Content="Find a replacement for unavailable tracks (music)" IsChecked="{Binding FindReplacements}" />
                 <TextBlock Classes="muted hint" Margin="28,0,0,0" TextWrapping="Wrap"
                            Text="When a video is gone, search YouTube Music for the same song (same artist, title and length) and download that instead, as YouTube Music does when it plays the playlist. Tracks without a close match stay marked unavailable." />
-                <CheckBox Content="Cut non-music parts (SponsorBlock)" IsChecked="{Binding SponsorBlockRemoveOfftopic}" />
+                <CheckBox Content="Cut non-music parts (SponsorBlock, music)" IsChecked="{Binding SponsorBlockRemoveOfftopic}" />
                 <TextBlock Classes="muted hint" Margin="28,0,0,0"
                            Text="Removes intros, talking and skits that SponsorBlock users marked as non-music in music videos." />
+                </StackPanel>
               </StackPanel>
 
               <TextBlock Classes="h2" Text="Extra yt-dlp arguments" />
@@ -251,11 +305,24 @@
 
             <StackPanel Classes="field" IsVisible="{Binding IsGlobal}">
               <TextBlock Classes="h2" Text="Parallel downloads" />
-              <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="1" Maximum="8" Increment="1" FormatString="0"
-                             Value="{Binding Concurrency}" />
-              <TextBlock Classes="error hint" Text="{Binding ConcurrencyError}"
-                         IsVisible="{Binding ConcurrencyError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              <TextBlock Classes="muted hint" Text="Tracks downloaded at the same time within one playlist." />
+              <Grid ColumnDefinitions="Auto,24,Auto">
+                <StackPanel Classes="field">
+                  <TextBlock Text="Music playlists" />
+                  <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="1" Maximum="8" Increment="1" FormatString="0"
+                                 Value="{Binding Concurrency}" />
+                  <TextBlock Classes="error hint" Text="{Binding ConcurrencyError}"
+                             IsVisible="{Binding ConcurrencyError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Classes="field">
+                  <TextBlock Text="Video playlists" />
+                  <NumericUpDown Width="160" HorizontalAlignment="Left" Minimum="1" Maximum="8" Increment="1" FormatString="0"
+                                 Value="{Binding VideoConcurrency}" />
+                  <TextBlock Classes="error hint" Text="{Binding VideoConcurrencyError}"
+                             IsVisible="{Binding VideoConcurrencyError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+              </Grid>
+              <TextBlock Classes="muted hint" TextWrapping="Wrap"
+                         Text="Tracks or videos downloaded at the same time within one playlist. Videos are much larger, so fewer at once is usually faster overall." />
             </StackPanel>
 
             <Button HorizontalAlignment="Left" Content="Restore default download settings" Command="{Binding ResetDownloadDefaultsCommand}"
@@ -314,15 +381,22 @@
           <StackPanel Classes="page">
             <TextBlock Classes="h2" Text="Library" />
             <StackPanel Classes="field">
-              <TextBlock Text="Default folder for new playlists" />
+              <TextBlock Text="Default folder for new music playlists" />
               <Grid ColumnDefinitions="*,Auto">
                 <TextBox Text="{Binding DefaultDirectory}" PlaceholderText="{x:Static vm:SettingsViewModel.MusicFolder}" />
                 <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseDefaultDirectoryCommand}" />
               </Grid>
               <TextBlock Classes="error hint" Text="{Binding DefaultDirectoryError}"
                          IsVisible="{Binding DefaultDirectoryError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <TextBlock Text="Default folder for new video playlists" Margin="0,6,0,0" />
+              <Grid ColumnDefinitions="*,Auto">
+                <TextBox Text="{Binding DefaultVideoDirectory}" PlaceholderText="{x:Static vm:SettingsViewModel.VideosFolder}" />
+                <Button Grid.Column="1" Margin="6,0,0,0" Content="Browse…" Command="{Binding BrowseDefaultVideoDirectoryCommand}" />
+              </Grid>
+              <TextBlock Classes="error hint" Text="{Binding DefaultVideoDirectoryError}"
+                         IsVisible="{Binding DefaultVideoDirectoryError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               <TextBlock Classes="muted hint" TextWrapping="Wrap"
-                         Text="A new playlist gets its own sub-folder here, named after the playlist. Empty = your Music folder. Existing playlists are not moved." />
+                         Text="A new playlist gets its own sub-folder here, named after the playlist. Empty = your Music / Videos folder. Existing playlists are not moved." />
             </StackPanel>
 
             <TextBlock Classes="h2" Text="Playback" />

@@ -34,7 +34,7 @@
           <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto,Auto,Auto" Margin="8,0,4,12">
             <TextBlock Classes="h1" Text="Playlists" VerticalAlignment="Center" />
             <Button Grid.Column="1" Classes="small" Content="Sync all" Command="{Binding SyncAllCommand}"
-                    ToolTip.Tip="Sync every playlist, one after another (Shift+F5)" />
+                    ToolTip.Tip="{Binding SyncAllTip}" />
             <Button Grid.Column="2" Classes="small icon" Margin="6,0,0,0" Command="{Binding OpenToolboxCommand}"
                     ToolTip.Tip="Toolbox: download a single video or track, and other utilities (Ctrl+T)">
               <PathIcon Data="{StaticResource ToolboxIcon}" />
@@ -44,21 +44,42 @@
               <PathIcon Data="{StaticResource SettingsIcon}" />
             </Button>
           </Grid>
+          <!-- Music / Videos: the sidebar lists one kind at a time -->
+          <Border DockPanel.Dock="Top" Classes="segmented" Margin="4,0,4,10">
+            <Grid ColumnDefinitions="*,*">
+              <RadioButton Classes="segment" GroupName="sidebarKind" Content="♪  Music" IsChecked="{Binding IsMusicView}"
+                           ToolTip.Tip="Show the music playlists" />
+              <RadioButton Grid.Column="1" Classes="segment" GroupName="sidebarKind" Content="▶  Videos"
+                           IsChecked="{Binding IsVideoView}" ToolTip.Tip="Show the video playlists" />
+            </Grid>
+          </Border>
           <Button DockPanel.Dock="Top" HorizontalAlignment="Stretch" Margin="4,0,4,8"
                   Content="+ Add playlist" Command="{Binding AddPlaylistCommand}"
                   ToolTip.Tip="Add a playlist (Ctrl+N)" />
+          <CheckBox DockPanel.Dock="Bottom" Margin="8,6,0,0" Content="{Binding ShowHiddenText}" IsChecked="{Binding ShowHidden}"
+                    IsVisible="{Binding ShowHiddenToggle}"
+                    ToolTip.Tip="List hidden playlists too (dimmed), so they can be shown again via right-click" />
           <Panel>
-            <TextBlock Classes="muted" Margin="8,8" TextWrapping="Wrap" Text="No playlists yet."
+            <TextBlock Classes="muted" Margin="8,8" TextWrapping="Wrap" Text="{Binding EmptyListText}"
                        IsVisible="{Binding IsEmpty}" />
-            <ListBox ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}"
+            <ListBox x:Name="PlaylistList" ItemsSource="{Binding Playlists}" SelectedItem="{Binding SelectedPlaylist}"
                      Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:PlaylistItemViewModel">
-                  <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding HealthTip}">
-                    <Panel Grid.Column="0" Width="34" Height="34" Margin="0,0,10,0" VerticalAlignment="Center">
-                      <Border Classes="cover small">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ToolTip.Tip="{Binding HealthTip}" Background="Transparent"
+                        Classes.dimmed="{Binding IsHidden}">
+                    <Grid.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="Move up" Command="{Binding MoveUpCommand}" />
+                        <MenuItem Header="Move down" Command="{Binding MoveDownCommand}" />
+                        <Separator />
+                        <MenuItem Header="{Binding HideText}" Command="{Binding ToggleHiddenCommand}" />
+                      </ContextMenu>
+                    </Grid.ContextMenu>
+                    <Panel Grid.Column="0" Height="34" Margin="0,0,10,0" VerticalAlignment="Center">
+                      <Border Classes="cover small" Classes.wide="{Binding IsVideo}">
                         <Panel>
-                          <TextBlock Classes="cover-placeholder" Text="♪" IsVisible="{Binding !HasCover}" />
+                          <TextBlock Classes="cover-placeholder" Text="{Binding CoverGlyph}" IsVisible="{Binding !HasCover}" />
                           <Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding HasCover}"
                          RenderOptions.BitmapInterpolationMode="MediumQuality" />
                         </Panel>
@@ -96,9 +117,9 @@
         <DockPanel Margin="20,16,20,8" DataContext="{Binding SelectedPlaylist}" x:DataType="vm:PlaylistItemViewModel">
           <StackPanel DockPanel.Dock="Top" Spacing="4">
             <Grid ColumnDefinitions="Auto,*">
-            <Border Grid.Column="0" Classes="cover large" Margin="0,0,16,0" VerticalAlignment="Top">
+            <Border Grid.Column="0" Classes="cover large" Classes.wide="{Binding IsVideo}" Margin="0,0,16,0" VerticalAlignment="Top">
               <Panel>
-                <TextBlock Classes="cover-placeholder" Text="♪" IsVisible="{Binding !HasCover}" />
+                <TextBlock Classes="cover-placeholder" Text="{Binding CoverGlyph}" IsVisible="{Binding !HasCover}" />
                 <Image Source="{Binding Cover}" Stretch="UniformToFill" IsVisible="{Binding HasCover}"
                          RenderOptions.BitmapInterpolationMode="MediumQuality" />
               </Panel>
@@ -129,8 +150,9 @@
                       <MenuItem Header="Copy URL" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).CopyUrlCommand}" />
                       <MenuItem Header="Download settings…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).PlaylistSettingsCommand}" />
                       <Separator />
-                      <MenuItem Header="Move up" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveUpCommand}" />
-                      <MenuItem Header="Move down" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MoveDownCommand}" />
+                      <MenuItem Header="Move up" Command="{Binding MoveUpCommand}" />
+                      <MenuItem Header="Move down" Command="{Binding MoveDownCommand}" />
+                      <MenuItem Header="{Binding HideText}" Command="{Binding ToggleHiddenCommand}" />
                       <Separator />
                       <MenuItem Header="Remove from library…" Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemovePlaylistCommand}" />
                     </MenuFlyout>
@@ -227,9 +249,11 @@
                                  Classes.attention="{Binding IsRemoved}" Classes.missing="{Binding IsMissing}"
                                  Classes.active="{Binding IsDownloading}" />
                       <!-- The image covers the placeholder once it has loaded. -->
-                      <Border Grid.Column="1" Grid.RowSpan="2" Classes="cover small" Margin="0,0,10,0" VerticalAlignment="Center">
+                      <Border Grid.Column="1" Grid.RowSpan="2" Classes="cover small" Margin="0,0,10,0" VerticalAlignment="Center"
+                              Classes.wide="{Binding $parent[ListBox].((vm:TrackListViewModel)DataContext).IsVideo}">
                         <Panel>
-                          <TextBlock Classes="cover-placeholder" Text="♪" />
+                          <TextBlock Classes="cover-placeholder"
+                                     Text="{Binding $parent[ListBox].((vm:TrackListViewModel)DataContext).Glyph}" />
                           <Image Source="{Binding Thumbnail}" Stretch="UniformToFill"
                                  RenderOptions.BitmapInterpolationMode="MediumQuality" />
                         </Panel>

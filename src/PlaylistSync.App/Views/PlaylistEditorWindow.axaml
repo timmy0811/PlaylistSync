@@ -13,6 +13,16 @@
   <StackPanel Margin="20" Spacing="14">
     <TextBlock Classes="h1" Text="{Binding Title}" />
 
+    <!-- Type -->
+    <StackPanel Spacing="4">
+      <TextBlock Text="Type" />
+      <StackPanel Orientation="Horizontal" Spacing="20" IsEnabled="{Binding CanChangeKind}">
+        <RadioButton GroupName="playlistKind" Content="Music (audio files)" IsChecked="{Binding IsMusic}" />
+        <RadioButton GroupName="playlistKind" Content="Videos (video files)" IsChecked="{Binding IsVideo}" />
+      </StackPanel>
+      <TextBlock Classes="muted hint" Text="{Binding KindHint}" TextWrapping="Wrap" />
+    </StackPanel>
+
     <!-- URL -->
     <StackPanel Spacing="4">
       <TextBlock Text="Playlist URL" />

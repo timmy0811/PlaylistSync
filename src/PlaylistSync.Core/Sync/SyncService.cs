@@ -176,8 +176,10 @@ public sealed class SyncService(
         }
 
         var disk = await Task.Run(() => DiskSnapshot.Scan(dir), ct).ConfigureAwait(false);
+        // Duplicate detection and replacements match songs (artist, title, length): music playlists only.
+        var music = entry.Kind == PlaylistKind.Music;
         var plan = SyncPlanner.Plan(remote, current, disk, entry.Url, options.RedownloadMissing, clock.GetUtcNow(),
-            options.SkipDuplicates);
+            options.SkipDuplicates && music, entry.Kind);
 
         if (plan.IsDifferentPlaylist && !allowDifferentPlaylist)
         {
@@ -204,7 +206,7 @@ public sealed class SyncService(
             var tempRoot = PrepareTempRoot(folder.IsRemote ? _folders.TempRootFor(entry.Directory) : Path.Combine(dir, TempDirName));
             var width = Math.Max(2, remote.Tracks.Count.ToString(System.Globalization.CultureInfo.InvariantCulture).Length);
 
-            var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(settings.Concurrency, 1, 8), CancellationToken = ct };
+            var parallel = new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(settings.ConcurrencyFor(entry.Kind), 1, 8), CancellationToken = ct };
             try
             {
                 await Parallel.ForEachAsync(plan.ToDownload, parallel, async (id, token) =>
@@ -230,6 +232,7 @@ public sealed class SyncService(
                     {
                         TrackNumber = record.RemoteIndex + 1,
                         TrackNumberWidth = width,
+                        Kind = entry.Kind,
                     };
                     var trackProgress = progress is null ? null : new InlineProgress<DownloadProgress>(p => progress.Report(new TrackProgress(id, p)));
 
@@ -238,7 +241,7 @@ public sealed class SyncService(
                     try
                     {
                         result = await downloader.DownloadAsync(request, trackProgress, token).ConfigureAwait(false);
-                        if (result.Error?.Kind == DownloadErrorKind.Unavailable && replacements is not null && options.FindReplacements)
+                        if (result.Error?.Kind == DownloadErrorKind.Unavailable && replacements is not null && options.FindReplacements && music)
                         {
                             replacement = await TryReplacementAsync(request, snapshot, result, trackProgress, token).ConfigureAwait(false);
                             if (replacement is not null) result = replacement.Result;

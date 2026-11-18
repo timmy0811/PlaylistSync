@@ -38,6 +38,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         [nameof(DownloadOptions.VbrLevel)] = "Audio",
         [nameof(DownloadOptions.CbrKbps)] = "Audio",
         [nameof(DownloadOptions.FilenameTemplate)] = "Files",
+        [nameof(DownloadOptions.VideoFilenameTemplate)] = "Video",
+        [nameof(DownloadOptions.VideoMaxHeight)] = "Video",
+        [nameof(DownloadOptions.SubtitleLanguages)] = "Video",
         [nameof(DownloadOptions.CookiesFile)] = "Network",
         [nameof(DownloadOptions.CookiesBrowser)] = "Network",
         [nameof(DownloadOptions.Proxy)] = "Network",
@@ -46,7 +49,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         [nameof(DownloadOptions.Retries)] = "Network",
         [nameof(DownloadOptions.ExtraArgs)] = "Advanced",
         [nameof(AppSettings.Concurrency)] = "Advanced",
+        [nameof(AppSettings.VideoConcurrency)] = "Advanced",
         [nameof(AppSettings.DefaultDirectory)] = "App",
+        [nameof(AppSettings.DefaultVideoDirectory)] = "App",
         [nameof(PlaybackSettings.ExecutablePath)] = "App",
         [nameof(ToolSettings.YtDlpPath)] = "Tools",
         [nameof(ToolSettings.FfmpegPath)] = "Tools",
@@ -79,7 +84,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         Download.Edited += UpdateErrors;
 
         _concurrency = current.Concurrency;
+        _videoConcurrency = current.VideoConcurrency;
         _defaultDirectory = current.DefaultDirectory ?? "";
+        _defaultVideoDirectory = current.DefaultVideoDirectory ?? "";
         _selectedTheme = Themes.FirstOrDefault(t => t.Value == current.Ui.Theme) ?? Themes[0];
         _selectedLogLevel = LogLevels.FirstOrDefault(l => l.Value == current.Ui.LogLevel) ?? LogLevels[1];
         (_players, _selectedPlayer) = InitialPlayers(current.Playback);
@@ -100,9 +107,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     /// <summary>One playlist's own download options. <paramref name="save"/> gets null for "use the global settings".</summary>
-    public SettingsViewModel(string playlistName, DownloadOptions? overrides, AppSettings global, IDialogService dialogs,
-        ILogger logger, Func<DownloadOptions?, Task> save, Func<string, bool>? fileExists = null)
+    public SettingsViewModel(string playlistName, PlaylistKind kind, DownloadOptions? overrides, AppSettings global,
+        IDialogService dialogs, ILogger logger, Func<DownloadOptions?, Task> save, Func<string, bool>? fileExists = null)
     {
+        _playlistKind = kind;
         _original = global;
         _dialogs = dialogs;
         _log = logger;
@@ -114,6 +122,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         Download.Edited += UpdateErrors;
         _useCustom = overrides is not null;
         _concurrency = global.Concurrency;
+        _videoConcurrency = global.VideoConcurrency;
         _selectedTheme = Themes[0];
         _selectedLogLevel = LogLevels[1];
         ToolRows = [];
@@ -123,6 +132,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public string Title { get; }
     public bool IsGlobal => _saveGlobal is not null;
     public bool IsPlaylist => !IsGlobal;
+
+    /// <summary>Playlist scope: the playlist's kind. Null in the global settings, which cover both kinds.</summary>
+    private readonly PlaylistKind? _playlistKind;
+
+    /// <summary>Audio tab and the music-only options (artist/title split, square cover, duplicates, replacements).</summary>
+    public bool ShowMusicOptions => _playlistKind != PlaylistKind.Video;
+    public bool ShowVideoOptions => _playlistKind != PlaylistKind.Music;
+    /// <summary>The tab shown first: Video for a video playlist (its Audio tab is hidden), else Audio.</summary>
+    public int InitialTab => _playlistKind == PlaylistKind.Video ? 1 : 0;
 
     public DownloadOptionsViewModel Download { get; }
 
@@ -140,9 +158,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     [ObservableProperty] private decimal? _concurrency;
     [ObservableProperty] private string? _concurrencyError;
+    [ObservableProperty] private decimal? _videoConcurrency;
+    [ObservableProperty] private string? _videoConcurrencyError;
     /// <summary>Base folder for new playlists; empty = the system Music folder.</summary>
     [ObservableProperty] private string _defaultDirectory = "";
     [ObservableProperty] private string? _defaultDirectoryError;
+    /// <summary>Base folder for new video playlists; empty = the system Videos folder.</summary>
+    [ObservableProperty] private string _defaultVideoDirectory = "";
+    [ObservableProperty] private string? _defaultVideoDirectoryError;
     [ObservableProperty] private Choice<ThemeMode> _selectedTheme;
     [ObservableProperty] private Choice<LogLevel> _selectedLogLevel;
 
@@ -238,10 +261,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     partial void OnConcurrencyChanged(decimal? value) => UpdateErrors();
+    partial void OnVideoConcurrencyChanged(decimal? value) => UpdateErrors();
     partial void OnDefaultDirectoryChanged(string value) => UpdateErrors();
+    partial void OnDefaultVideoDirectoryChanged(string value) => UpdateErrors();
 
     /// <summary>Shown as the placeholder of the empty default-folder box.</summary>
     public static string MusicFolder => PathUtil.MusicDir;
+    public static string VideosFolder => PathUtil.VideosDir;
 
     internal void OnToolPathChanged() => UpdateErrors();
 
@@ -249,7 +275,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         Download = Download.ToOptions(),
         Concurrency = Concurrency is { } c ? (int)Math.Round(c) : 0,
+        VideoConcurrency = VideoConcurrency is { } vc ? (int)Math.Round(vc) : 0,
         DefaultDirectory = string.IsNullOrWhiteSpace(DefaultDirectory) ? null : DefaultDirectory.Trim(),
+        DefaultVideoDirectory = string.IsNullOrWhiteSpace(DefaultVideoDirectory) ? null : DefaultVideoDirectory.Trim(),
         Tools = _original.Tools with
         {
             YtDlpPath = Row(ToolKind.YtDlp)?.ConfiguredPath ?? null,
@@ -269,7 +297,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         {
             var app = SettingsValidator.ValidateApp(Build());
             ConcurrencyError = app.Error(nameof(AppSettings.Concurrency));
+            VideoConcurrencyError = app.Error(nameof(AppSettings.VideoConcurrency));
             DefaultDirectoryError = app.Error(nameof(AppSettings.DefaultDirectory));
+            DefaultVideoDirectoryError = app.Error(nameof(AppSettings.DefaultVideoDirectory));
             PlayerPathError = app.Error(nameof(PlaybackSettings.ExecutablePath));
             foreach (var row in ToolRows)
                 row.PathError = row.SettingsKey is { } key ? app.Error(key) : null;
@@ -366,12 +396,24 @@ public sealed partial class SettingsViewModel : ViewModelBase
     [RelayCommand]
     private async Task BrowseDefaultDirectoryAsync()
     {
-        var start = PathUtil.NormalizeUserPath(DefaultDirectory, PathUtil.Home);
+        var picked = await PickBaseFolderAsync(DefaultDirectory, "Choose the base folder for new music playlists", PathUtil.MusicDir);
+        if (picked is not null) DefaultDirectory = picked;
+    }
+
+    [RelayCommand]
+    private async Task BrowseDefaultVideoDirectoryAsync()
+    {
+        var picked = await PickBaseFolderAsync(DefaultVideoDirectory, "Choose the base folder for new video playlists", PathUtil.VideosDir);
+        if (picked is not null) DefaultVideoDirectory = picked;
+    }
+
+    private Task<string?> PickBaseFolderAsync(string current, string title, string fallback)
+    {
+        var start = PathUtil.NormalizeUserPath(current, PathUtil.Home);
         if (PlaylistSync.Core.Locations.FolderResolver.IsRemote(start)) start = null; // the picker needs a local start folder
         while (start is not null && !Directory.Exists(start))
             start = System.IO.Path.GetDirectoryName(start);
-        var picked = await _dialogs.PickFolderAsync("Choose the base folder for new playlists", start ?? PathUtil.MusicDir);
-        if (picked is not null) DefaultDirectory = picked;
+        return _dialogs.PickFolderAsync(title, start ?? fallback);
     }
 
     [RelayCommand]

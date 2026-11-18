@@ -31,12 +31,22 @@ public static class SyncPlanner
         ".mp3", ".m4a", ".opus", ".flac", ".ogg", ".oga", ".wav", ".webm", ".aac", ".mka", ".wma", ".alac", ".aiff",
     };
 
+    public static readonly IReadOnlySet<string> VideoExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi", ".wmv", ".flv", ".ts",
+    };
+
+    /// <summary>The files of <paramref name="kind"/> that count as untracked when the manifest doesn't know them.</summary>
+    public static IReadOnlySet<string> MediaExtensions(PlaylistKind kind) =>
+        kind == PlaylistKind.Video ? VideoExtensions : AudioExtensions;
+
     /// <param name="playlistUrl">The library entry's URL, stored in the manifest.</param>
     /// <param name="redownloadMissing">Queue tracks whose file was deleted locally (otherwise they become <see cref="TrackStatus.MissingLocal"/>).</param>
     /// <param name="skipDuplicates">
     /// Don't download a track when the same song (artist, title, length) is already downloaded or comes earlier in the
     /// playlist under another video id; it becomes <see cref="TrackStatus.Duplicate"/> instead.
     /// </param>
+    /// <param name="kind">Picks the cover shape and which files count as untracked.</param>
     public static SyncPlan Plan(
         RemotePlaylist remote,
         Manifest? current,
@@ -44,7 +54,8 @@ public static class SyncPlanner
         string playlistUrl,
         bool redownloadMissing,
         DateTimeOffset now,
-        bool skipDuplicates = false)
+        bool skipDuplicates = false,
+        PlaylistKind kind = PlaylistKind.Music)
     {
         var manifest = current?.Clone() ?? new Manifest();
         var isDifferentPlaylist = current?.PlaylistId is { } oldId && remote.Id is { } newId &&
@@ -53,7 +64,7 @@ public static class SyncPlanner
         manifest.PlaylistUrl = playlistUrl;
         manifest.PlaylistId = remote.Id ?? manifest.PlaylistId;
         manifest.PlaylistTitle = remote.Title ?? manifest.PlaylistTitle;
-        manifest.CoverUrl = PlaylistCover.Pick(remote.Thumbnails) ?? manifest.CoverUrl;
+        manifest.CoverUrl = PlaylistCover.Pick(remote.Thumbnails, preferWide: kind == PlaylistKind.Video) ?? manifest.CoverUrl;
 
         var toDownload = new List<string>();
         var changes = new List<TrackChange>();
@@ -134,7 +145,7 @@ public static class SyncPlanner
             }
         }
 
-        return new SyncPlan(manifest, toDownload, changes, FindUntracked(manifest, disk), isDifferentPlaylist);
+        return new SyncPlan(manifest, toDownload, changes, FindUntracked(manifest, disk, kind), isDifferentPlaylist);
     }
 
     /// <summary>
@@ -173,14 +184,15 @@ public static class SyncPlanner
         if (track.DurationSec is not null) record.DurationSec = track.DurationSec;
     }
 
-    /// <summary>Audio files on disk that no manifest record points to, sorted by path.</summary>
-    public static List<string> FindUntracked(Manifest? manifest, DiskSnapshot disk)
+    /// <summary>Audio (or, for a video playlist, video) files on disk that no manifest record points to, sorted by path.</summary>
+    public static List<string> FindUntracked(Manifest? manifest, DiskSnapshot disk, PlaylistKind kind = PlaylistKind.Music)
     {
+        var extensions = MediaExtensions(kind);
         var known = new HashSet<string>(
             (manifest?.Tracks.Values ?? Enumerable.Empty<TrackRecord>()).Where(r => r.File is not null).Select(r => DiskSnapshot.Normalize(r.File!)),
             disk.Comparer);
         return disk.Files
-            .Where(f => AudioExtensions.Contains(Path.GetExtension(f)) && !known.Contains(f))
+            .Where(f => extensions.Contains(Path.GetExtension(f)) && !known.Contains(f))
             .Order(disk.Comparer)
             .ToList();
     }

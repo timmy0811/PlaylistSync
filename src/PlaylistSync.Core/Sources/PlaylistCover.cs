@@ -20,14 +20,17 @@ public static class PlaylistCover
          uri.AbsolutePath.StartsWith("/vi_webp/", StringComparison.Ordinal));
 
     /// <summary>
-    /// The URL of the best image: custom covers first, then square ones, then the largest. Only https images from
-    /// YouTube's image hosts qualify (see <see cref="IsAllowedHost"/>). Null if there is none.
+    /// The URL of the best image: custom covers first, then square ones (wide ones for <paramref name="preferWide"/>,
+    /// the cover of a video playlist), then the largest. Only https images from YouTube's image hosts qualify (see
+    /// <see cref="IsAllowedHost"/>). Null if there is none.
     /// </summary>
-    public static string? Pick(IEnumerable<RemoteThumbnail> thumbnails) =>
+    public static string? Pick(IEnumerable<RemoteThumbnail> thumbnails, bool preferWide = false) =>
         thumbnails
             .Where(t => IsAllowedHost(t.Url))
             .OrderByDescending(t => IsCustom(t.Url))
-            .ThenByDescending(t => t.Width is { } w && w == t.Height)
+            .ThenByDescending(t => preferWide
+                ? t.Width is { } w && t.Height is { } h && w > h
+                : t.Width is { } sw && sw == t.Height)
             .ThenByDescending(t => (long)(t.Width ?? 0) * (t.Height ?? 0))
             .Select(t => t.Url)
             .FirstOrDefault();

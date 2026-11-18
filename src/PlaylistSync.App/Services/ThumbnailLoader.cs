@@ -20,20 +20,23 @@ public sealed class ThumbnailLoader(
     FolderResolver folders,
     ILogger<ThumbnailLoader> log)
 {
-    /// <summary>The list shows 34 px; decoding at 2× keeps it sharp on HiDPI while staying ≈20 KB per row.</summary>
+    /// <summary>The list shows 34 px high; decoding at 2× keeps it sharp on HiDPI while staying ≈20 KB per row.</summary>
     private const int DecodeWidth = 72;
+    /// <summary>16:9 thumbnails of video playlists are 60 px wide in the list.</summary>
+    private const int WideDecodeWidth = 120;
 
     /// <summary>Folders that could not be resolved (NAS off): not tried again for thumbnails, so no repeated mount attempts.</summary>
     private readonly ConcurrentDictionary<string, byte> _unavailableFolders = new(StringComparer.Ordinal);
 
     /// <summary>Null if the track has no thumbnail or it can't be decoded. Never throws.</summary>
-    public Task<Bitmap?> LoadAsync(string trackId) => Task.Run(() =>
+    public Task<Bitmap?> LoadAsync(string trackId, ThumbnailShape shape = ThumbnailShape.Square) => Task.Run(() =>
     {
-        if (store.Find(trackId) is not { } path) return null;
+        if (store.Find(trackId, shape) is not { } path) return null;
         try
         {
             using var stream = File.OpenRead(path);
-            return Bitmap.DecodeToWidth(stream, DecodeWidth, BitmapInterpolationMode.HighQuality);
+            return Bitmap.DecodeToWidth(stream, shape == ThumbnailShape.Wide ? WideDecodeWidth : DecodeWidth,
+                BitmapInterpolationMode.HighQuality);
         }
         catch (Exception ex)
         {
@@ -45,15 +48,17 @@ public sealed class ThumbnailLoader(
     /// <summary>
     /// Makes the thumbnail of a downloaded track that has none. <paramref name="file"/> is relative to the playlist
     /// folder <paramref name="directory"/>; <paramref name="sourceVideoId"/> is the replacement the file came from, if
-    /// any. True if a thumbnail exists afterwards. Never throws.
+    /// any. A video file is not looked into (its first video stream is the video, not a cover): its thumbnail comes from
+    /// YouTube. True if a thumbnail exists afterwards. Never throws.
     /// </summary>
-    public Task<bool> CreateMissingAsync(string trackId, string directory, string file, string? sourceVideoId) => Task.Run(async () =>
+    public Task<bool> CreateMissingAsync(string trackId, string directory, string file, string? sourceVideoId,
+        ThumbnailShape shape = ThumbnailShape.Square) => Task.Run(async () =>
     {
         try
         {
             if (tools.Locate(ToolKind.Ffmpeg, settings.Current.Tools) is not { Exists: true } ffmpeg) return false;
-            var audioPath = await AudioPathAsync(directory, file).ConfigureAwait(false);
-            var source = await store.CreateMissingAsync(trackId, audioPath, sourceVideoId, ffmpeg, CancellationToken.None)
+            var audioPath = shape == ThumbnailShape.Wide ? null : await AudioPathAsync(directory, file).ConfigureAwait(false);
+            var source = await store.CreateMissingAsync(trackId, audioPath, sourceVideoId, ffmpeg, CancellationToken.None, shape)
                 .ConfigureAwait(false);
             if (source is ThumbnailSource.AudioFile or ThumbnailSource.YouTube)
                 log.LogDebug("Made the missing thumbnail of {Id} from {Source}", trackId, source);

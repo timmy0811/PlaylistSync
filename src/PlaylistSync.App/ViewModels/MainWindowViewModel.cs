@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 using PlaylistSync.App.Services;
 using PlaylistSync.Core;
+using PlaylistSync.Core.Covers;
 using PlaylistSync.Core.Locations;
 using PlaylistSync.Core.Models;
 using PlaylistSync.Core.Playback;
@@ -32,12 +33,59 @@ public partial class MainWindowViewModel(
     PlayerLauncher player,
     IDialogService dialogs,
     ToolboxViewModel toolbox,
-    ILogger<MainWindowViewModel> log) : ViewModelBase, ITrackActions
+    ILogger<MainWindowViewModel> log) : ViewModelBase, ITrackActions, IPlaylistActions
 {
     private readonly List<PlaylistItemViewModel> _syncing = [];
     private CancellationTokenSource? _syncAllCts;
 
+    /// <summary>Every playlist of the library, in library order. <see cref="Playlists"/> is the part the sidebar shows.</summary>
+    private readonly List<PlaylistItemViewModel> _all = [];
+    /// <summary>The playlist last selected in each sidebar view, to return to it when switching back.</summary>
+    private readonly Dictionary<PlaylistKind, PlaylistItemViewModel> _lastSelected = [];
+    /// <summary>Set while the sidebar state is restored from the settings, so that doesn't save it again.</summary>
+    private bool _restoringSidebar;
+
+    /// <summary>The playlists shown in the sidebar: those of <see cref="SidebarKind"/>, without hidden ones unless <see cref="ShowHidden"/>.</summary>
     public ObservableCollection<PlaylistItemViewModel> Playlists { get; } = [];
+
+    /// <summary>Which kind of playlists the sidebar shows. Never both.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMusicView), nameof(IsVideoView), nameof(SyncAllTip))]
+    private PlaylistKind _sidebarKind = PlaylistKind.Music;
+
+    public bool IsMusicView
+    {
+        get => SidebarKind == PlaylistKind.Music;
+        set { if (value) SidebarKind = PlaylistKind.Music; }
+    }
+
+    public bool IsVideoView
+    {
+        get => SidebarKind == PlaylistKind.Video;
+        set { if (value) SidebarKind = PlaylistKind.Video; }
+    }
+
+    /// <summary>The sidebar also lists hidden playlists (dimmed), so they can be shown again.</summary>
+    [ObservableProperty]
+    private bool _showHidden;
+
+    /// <summary>Hidden playlists of the current kind.</summary>
+    public int HiddenCount => _all.Count(p => p.Kind == SidebarKind && p.IsHidden);
+    /// <summary>The toggle is only offered when there is something hidden (or it is on).</summary>
+    public bool ShowHiddenToggle => HiddenCount > 0 || ShowHidden;
+    public string ShowHiddenText => $"Show hidden ({HiddenCount})";
+
+    public string EmptyListText => (SidebarKind, HiddenCount) switch
+    {
+        (PlaylistKind.Video, > 0) => "All video playlists are hidden.",
+        (_, > 0) => "All music playlists are hidden.",
+        (PlaylistKind.Video, _) => "No video playlists yet.",
+        _ => "No music playlists yet.",
+    };
+
+    public string SyncAllTip => SidebarKind == PlaylistKind.Video
+        ? "Sync every video playlist in the list, one after another; hidden ones are skipped (Shift+F5)"
+        : "Sync every music playlist in the list, one after another; hidden ones are skipped (Shift+F5)";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
@@ -72,7 +120,7 @@ public partial class MainWindowViewModel(
     private bool CanSync => SelectedPlaylist is { IsSyncing: false };
     private bool CanCancelSync => SelectedPlaylist is { IsSyncing: true };
     private bool CanChangeSelected => SelectedPlaylist is { IsSyncing: false };
-    private bool CanSyncAll => !IsSyncingAll && Playlists.Count > 0;
+    private bool CanSyncAll => !IsSyncingAll && Playlists.Any(p => !p.IsHidden);
 
     /// <summary>Loads settings and the library. Called once when the main window opens.</summary>
     public async Task InitializeAsync()
@@ -91,20 +139,90 @@ public partial class MainWindowViewModel(
         }
 
         foreach (var entry in library.Entries)
-            Playlists.Add(new PlaylistItemViewModel(entry, this, covers));
+            _all.Add(new PlaylistItemViewModel(entry, this, covers, this));
+        _restoringSidebar = true;
+        try
+        {
+            SidebarKind = settings.Current.Ui.SidebarKind;
+            ShowHidden = settings.Current.Ui.ShowHidden;
+        }
+        finally
+        {
+            _restoringSidebar = false;
+        }
         IsLoaded = true;
-        OnPropertyChanged(nameof(IsEmpty));
-        SyncAllCommand.NotifyCanExecuteChanged();
-        SelectedPlaylist = Playlists.FirstOrDefault();
+        RefreshVisible();
         StatusText = "Ready";
 
-        await Task.WhenAll(Playlists.Where(p => p != SelectedPlaylist).Select(p => p.RefreshSummaryAsync(manifests, folders)));
+        await Task.WhenAll(_all.Where(p => p != SelectedPlaylist).Select(p => p.RefreshSummaryAsync(manifests, folders)));
     }
 
     partial void OnSelectedPlaylistChanged(PlaylistItemViewModel? value)
     {
+        if (value is null) return;
+        _lastSelected[value.Kind] = value;
         // Re-read on every selection: files may have changed outside the app.
-        if (value is not null) _ = value.LoadTracksAsync(manifests, folders);
+        _ = value.LoadTracksAsync(manifests, folders);
+    }
+
+    partial void OnSidebarKindChanged(PlaylistKind value)
+    {
+        RefreshVisible();
+        SaveSidebarState();
+    }
+
+    partial void OnShowHiddenChanged(bool value)
+    {
+        RefreshVisible();
+        SaveSidebarState();
+    }
+
+    private bool IsShown(PlaylistItemViewModel p) => p.Kind == SidebarKind && (ShowHidden || !p.IsHidden);
+
+    /// <summary>
+    /// Rebuilds the sidebar list from <see cref="_all"/> and selects <paramref name="select"/>, else the current
+    /// selection, else the playlist last selected in this view, else the first one.
+    /// </summary>
+    private void RefreshVisible(PlaylistItemViewModel? select = null)
+    {
+        if (!IsLoaded) return;
+        var keep = select ?? SelectedPlaylist;
+        var visible = _all.Where(IsShown).ToList();
+        if (!visible.SequenceEqual(Playlists))
+        {
+            Playlists.Clear();
+            foreach (var item in visible) Playlists.Add(item);
+        }
+
+        PlaylistItemViewModel? target = null;
+        if (keep is not null && visible.Contains(keep)) target = keep;
+        else if (_lastSelected.TryGetValue(SidebarKind, out var last) && visible.Contains(last)) target = last;
+        SelectedPlaylist = target ?? visible.FirstOrDefault();
+
+        OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(HiddenCount));
+        OnPropertyChanged(nameof(ShowHiddenToggle));
+        OnPropertyChanged(nameof(ShowHiddenText));
+        OnPropertyChanged(nameof(EmptyListText));
+        SyncAllCommand.NotifyCanExecuteChanged();
+        MoveUpCommand.NotifyCanExecuteChanged();
+        MoveDownCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Remembers the sidebar view (kind, show hidden) in the settings. Best effort.</summary>
+    private async void SaveSidebarState()
+    {
+        if (_restoringSidebar || !IsLoaded) return;
+        var current = settings.Current;
+        if (current.Ui.SidebarKind == SidebarKind && current.Ui.ShowHidden == ShowHidden) return;
+        try
+        {
+            await settings.SaveAsync(current with { Ui = current.Ui with { SidebarKind = SidebarKind, ShowHidden = ShowHidden } });
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Could not save the sidebar view");
+        }
     }
 
     // ───────────────────────────── Library ─────────────────────────────
@@ -115,11 +233,12 @@ public partial class MainWindowViewModel(
         var editor = CreateEditor(original: null, async entry =>
         {
             await library.AddAsync(entry);
-            var item = new PlaylistItemViewModel(entry, this, covers);
-            Playlists.Add(item);
-            OnPropertyChanged(nameof(IsEmpty));
-            SyncAllCommand.NotifyCanExecuteChanged();
-            SelectedPlaylist = item;
+            var item = new PlaylistItemViewModel(entry, this, covers, this);
+            _all.Add(item);
+            // Show the new playlist: switch to its kind's list if needed.
+            if (SidebarKind != entry.Kind) _lastSelected[entry.Kind] = item;
+            SidebarKind = entry.Kind;
+            RefreshVisible(select: item);
             log.LogInformation("Added playlist '{Name}' ({Url} → {Dir})", entry.Name, entry.Url, entry.Directory);
         });
         await dialogs.ShowPlaylistEditorAsync(editor);
@@ -166,11 +285,11 @@ public partial class MainWindowViewModel(
 
         covers.Remove(item.Id);
         item.ResetCover();
-        var index = Playlists.IndexOf(item);
-        Playlists.Remove(item);
-        OnPropertyChanged(nameof(IsEmpty));
-        SyncAllCommand.NotifyCanExecuteChanged();
-        SelectedPlaylist = Playlists.Count == 0 ? null : Playlists[Math.Min(index, Playlists.Count - 1)];
+        var next = Neighbour(item);
+        _all.Remove(item);
+        if (_lastSelected.TryGetValue(item.Kind, out var last) && last == item) _lastSelected.Remove(item.Kind);
+        if (SelectedPlaylist == item) SelectedPlaylist = null;
+        RefreshVisible(select: next);
         log.LogInformation("Removed playlist '{Name}' from the library (folder kept)", item.Name);
     }
 
@@ -198,7 +317,7 @@ public partial class MainWindowViewModel(
     private async Task PlaylistSettingsAsync()
     {
         if (SelectedPlaylist is not { IsSyncing: false } item) return;
-        var vm = CreatePlaylistSettings(item.Name, item.Entry.Overrides, async overrides =>
+        var vm = CreatePlaylistSettings(item.Name, item.Kind, item.Entry.Overrides, async overrides =>
         {
             await library.UpdateAsync(item.Id, e => e with { Overrides = overrides });
             if (library.Find(item.Id) is { } updated) item.Entry = updated;
@@ -207,33 +326,103 @@ public partial class MainWindowViewModel(
         if (await dialogs.ShowSettingsAsync(vm)) StatusText = $"Download settings of '{item.Name}' saved";
     }
 
-    internal SettingsViewModel CreatePlaylistSettings(string name, DownloadOptions? overrides, Func<DownloadOptions?, Task> save) =>
-        new(name, overrides, settings.Current, dialogs, log, save);
+    internal SettingsViewModel CreatePlaylistSettings(string name, PlaylistKind kind, DownloadOptions? overrides,
+        Func<DownloadOptions?, Task> save) =>
+        new(name, kind, overrides, settings.Current, dialogs, log, save);
 
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task MoveUpAsync() => MoveAsync(-1);
+    // ───────────────────────────── Order / hide ─────────────────────────────
 
-    [RelayCommand(CanExecute = nameof(HasSelection))]
-    private Task MoveDownAsync() => MoveAsync(+1);
+    /// <param name="item">The row whose context menu was used; null = the selected playlist.</param>
+    [RelayCommand(CanExecute = nameof(CanMoveUp))]
+    private Task MoveUpAsync(PlaylistItemViewModel? item) => MoveAsync(item ?? SelectedPlaylist, -1);
 
-    private async Task MoveAsync(int delta)
+    [RelayCommand(CanExecute = nameof(CanMoveDown))]
+    private Task MoveDownAsync(PlaylistItemViewModel? item) => MoveAsync(item ?? SelectedPlaylist, +1);
+
+    private bool CanMoveUp(PlaylistItemViewModel? item) => Playlists.IndexOf(item ?? SelectedPlaylist!) > 0;
+
+    private bool CanMoveDown(PlaylistItemViewModel? item) =>
+        Playlists.IndexOf(item ?? SelectedPlaylist!) is var i && i >= 0 && i < Playlists.Count - 1;
+
+    Task IPlaylistActions.MoveUpAsync(PlaylistItemViewModel item) => MoveAsync(item, -1);
+    Task IPlaylistActions.MoveDownAsync(PlaylistItemViewModel item) => MoveAsync(item, +1);
+    Task IPlaylistActions.ToggleHiddenAsync(PlaylistItemViewModel item) => ToggleHiddenAsync(item);
+
+    private async Task MoveAsync(PlaylistItemViewModel? item, int delta)
     {
-        if (SelectedPlaylist is not { } item) return;
+        if (item is null) return;
         var from = Playlists.IndexOf(item);
         var to = from + delta;
-        if (to < 0 || to >= Playlists.Count) return;
+        if (from < 0 || to < 0 || to >= Playlists.Count) return;
+        var selected = SelectedPlaylist;
+        Playlists.Move(from, to);
+        SelectedPlaylist = selected;
+        await CommitOrderAsync();
+    }
+
+    /// <summary>Drag &amp; drop in the sidebar: moves a row live; <see cref="CommitOrderAsync"/> saves the result on drop.</summary>
+    public void PreviewMove(int from, int to)
+    {
+        if (from == to || from < 0 || to < 0 || from >= Playlists.Count || to >= Playlists.Count) return;
+        var selected = SelectedPlaylist;
+        Playlists.Move(from, to);
+        SelectedPlaylist = selected;
+    }
+
+    /// <summary>
+    /// Saves the sidebar order to the library. Only the shown playlists change places among themselves; the other kind
+    /// and hidden ones keep theirs. On failure the list goes back to the saved order.
+    /// </summary>
+    public async Task CommitOrderAsync()
+    {
+        var order = Playlists.Select(p => p.Id).ToList();
         try
         {
-            await library.MoveAsync(item.Id, to);
+            await library.ReorderAsync(order);
         }
         catch (Exception ex)
         {
             log.LogError(ex, "Reordering failed");
             await dialogs.ShowErrorAsync("Could not save the new order", ex.Message);
+        }
+        var index = library.Entries.Select((e, i) => (e.Id, i)).ToDictionary(x => x.Id, x => x.i);
+        _all.Sort((a, b) => index.GetValueOrDefault(a.Id).CompareTo(index.GetValueOrDefault(b.Id)));
+        RefreshVisible();
+    }
+
+    /// <summary>Hides a playlist from the sidebar, or shows a hidden one again. Its folder and syncing are not affected.</summary>
+    /// <param name="item">The row whose context menu was used; null = the selected playlist.</param>
+    [RelayCommand]
+    private async Task ToggleHiddenAsync(PlaylistItemViewModel? item)
+    {
+        item ??= SelectedPlaylist;
+        if (item is null) return;
+        var hide = !item.IsHidden;
+        try
+        {
+            await library.UpdateAsync(item.Id, e => e with { Hidden = hide });
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Changing the visibility of '{Name}' failed", item.Name);
+            await dialogs.ShowErrorAsync(hide ? "Could not hide the playlist" : "Could not show the playlist", ex.Message);
             return;
         }
-        Playlists.Move(from, to);
-        SelectedPlaylist = item;
+        if (library.Find(item.Id) is { } updated) item.Entry = updated;
+
+        var next = hide && !ShowHidden && SelectedPlaylist == item ? Neighbour(item) : null;
+        RefreshVisible(select: next);
+        StatusText = hide
+            ? ShowHidden ? $"'{item.Name}' is hidden" : $"'{item.Name}' is hidden. Turn on \"Show hidden\" to see it again."
+            : $"'{item.Name}' is shown again";
+    }
+
+    /// <summary>The row after <paramref name="item"/> in the sidebar (or before it, at the end), to select when it goes away.</summary>
+    private PlaylistItemViewModel? Neighbour(PlaylistItemViewModel item)
+    {
+        var i = Playlists.IndexOf(item);
+        if (i < 0) return null;
+        return i + 1 < Playlists.Count ? Playlists[i + 1] : i > 0 ? Playlists[i - 1] : null;
     }
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
@@ -280,10 +469,11 @@ public partial class MainWindowViewModel(
         IsSyncingAll = true;
         try
         {
-            foreach (var item in Playlists.ToList())
+            // The playlists of the shown kind, without hidden ones, in sidebar order.
+            foreach (var item in Playlists.Where(p => !p.IsHidden).ToList())
             {
                 if (cts.IsCancellationRequested) break;
-                if (item.IsSyncing || !Playlists.Contains(item)) continue;
+                if (item.IsSyncing || !_all.Contains(item) || item.IsHidden) continue;
                 await StartSync(item);
             }
         }
@@ -524,12 +714,14 @@ public partial class MainWindowViewModel(
     async Task<Bitmap?> ITrackActions.LoadThumbnailAsync(TrackRowViewModel row)
     {
         if (row.Id is not { } id) return null;
-        if (await thumbnails.LoadAsync(id) is { } bitmap) return bitmap;
+        var owner = OwnerOf(row);
+        var shape = TrackThumbnails.ShapeFor(owner?.Kind ?? PlaylistKind.Music);
+        if (await thumbnails.LoadAsync(id, shape) is { } bitmap) return bitmap;
         // Downloaded before thumbnails existed: make it from the file (or YouTube's image) instead of downloading again.
         // A row being downloaded gets its thumbnail from the download.
-        if (row.File is null || row.IsDownloading || OwnerOf(row) is not { } item) return null;
-        return await thumbnails.CreateMissingAsync(id, item.Directory, row.File, row.ReplacementId)
-            ? await thumbnails.LoadAsync(id)
+        if (row.File is null || row.IsDownloading || owner is null) return null;
+        return await thumbnails.CreateMissingAsync(id, owner.Directory, row.File, row.ReplacementId, shape)
+            ? await thumbnails.LoadAsync(id, shape)
             : null;
     }
 
@@ -715,7 +907,7 @@ public partial class MainWindowViewModel(
     private PlaylistItemViewModel? OwnerOf(TrackRowViewModel row) =>
         SelectedPlaylist is { } selected && selected.Tracks.Contains(row)
             ? selected
-            : Playlists.FirstOrDefault(p => p.Tracks.Contains(row));
+            : _all.FirstOrDefault(p => p.Tracks.Contains(row));
 
     /// <summary>
     /// Opens the playlist folder (or a sub folder of it) in the file manager. A network folder is opened by its
@@ -766,7 +958,7 @@ public partial class MainWindowViewModel(
 
     private PlaylistEditorViewModel CreateEditor(PlaylistEntry? original, Func<PlaylistEntry, Task> save) =>
         new(sources, manifests, folders, dialogs, log, settings.Current, library.Entries, original, save,
-            (name, overrides, saveOverrides) => CreatePlaylistSettings(name, overrides, saveOverrides));
+            (name, kind, overrides, saveOverrides) => CreatePlaylistSettings(name, kind, overrides, saveOverrides));
 
     /// <summary>Posts reports to the UI thread, in order.</summary>
     private sealed class UiProgress<T>(Action<T> apply) : IProgress<T>
